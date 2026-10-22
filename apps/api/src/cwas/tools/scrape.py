@@ -18,6 +18,10 @@ MAX_REDIRECTS = 5
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 
 
+class PageFetcher(Protocol):
+    async def fetch(self, url: str, source_type: SourceType = "source") -> ScrapedPage | None: ...
+
+
 class PageCache(Protocol):
     async def get(self, url: str) -> ScrapedPage | None: ...
     async def set(self, url: str, page: ScrapedPage) -> None: ...

@@ -10,7 +10,11 @@ def draft(text: str) -> Draft:
 
 def teh_fixer(text: str) -> list[GrammarMatch]:
     i = text.index("teh")
-    return [GrammarMatch(offset=i, length=3, message="typo", replacements=["the"], issue_type="misspelling")]
+    return [
+        GrammarMatch(
+            offset=i, length=3, message="typo", replacements=["the"], issue_type="misspelling"
+        )
+    ]
 
 
 async def test_applies_corrections_and_scores_readability() -> None:

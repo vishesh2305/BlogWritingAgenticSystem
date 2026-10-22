@@ -28,13 +28,29 @@ class FakeLLM:
         self._texts = texts or ["Draft text."]
         self.calls: list[dict[str, Any]] = []
 
-    async def structured(self, *, tier: str, system: str, prompt: str, schema: type, effort: str = "medium") -> Any:
-        self.calls.append({"kind": "structured", "tier": tier, "system": system, "prompt": prompt, "schema": schema})
+    async def structured(
+        self, *, tier: str, system: str, prompt: str, schema: type, effort: str = "medium"
+    ) -> Any:
+        self.calls.append(
+            {
+                "kind": "structured",
+                "tier": tier,
+                "system": system,
+                "prompt": prompt,
+                "schema": schema,
+            }
+        )
         queue = self._structured[schema]
         return queue.pop(0) if len(queue) > 1 else queue[0]
 
     async def text(
-        self, *, tier: str, system: str, prompt: str, effort: str = "medium", max_tokens: int = 16000
+        self,
+        *,
+        tier: str,
+        system: str,
+        prompt: str,
+        effort: str = "medium",
+        max_tokens: int = 16000,
     ) -> str:
         self.calls.append({"kind": "text", "tier": tier, "system": system, "prompt": prompt})
         return self._texts.pop(0) if len(self._texts) > 1 else self._texts[0]

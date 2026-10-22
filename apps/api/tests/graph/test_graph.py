@@ -26,7 +26,9 @@ def deps_with(llm: FakeLLM) -> Any:
     return make_deps(llm=llm, search=FakeSearch(SEARCH), scraper=FakeScraper(PAGES))
 
 
-async def run_to_end(graph: Any, payload: Any, thread: str) -> tuple[list[dict[str, Any]], list[Any]]:
+async def run_to_end(
+    graph: Any, payload: Any, thread: str
+) -> tuple[list[dict[str, Any]], list[Any]]:
     events: list[dict[str, Any]] = []
     interrupts: list[Any] = []
     config = {"configurable": {"thread_id": thread}}
