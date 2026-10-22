@@ -57,9 +57,8 @@ class Brief(BaseModel):
     primary_keyword: str
     secondary_keywords: list[str] = Field(default_factory=list)
     target_word_count: int = 1500
-    search_queries: list[str] = Field(
-        default_factory=list, description="3-6 web search queries that cover the topic"
-    )
+    # Required (no default) so schema-constrained decoding cannot skip it.
+    search_queries: list[str] = Field(description="3-6 web search queries that cover the topic")
     confidence: float = Field(ge=0.0, le=1.0, description="How clear the user's intent is")
     clarifying_question: str | None = Field(
         default=None, description="One question to ask when intent is ambiguous"

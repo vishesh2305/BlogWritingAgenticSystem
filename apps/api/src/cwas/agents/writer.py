@@ -9,7 +9,11 @@ from cwas.agents.deps import AgentDeps
 from cwas.graph.state import RunState
 from cwas.models import Brief, Citation, Draft
 
-_CITATION = re.compile(r"\s?\[(\d+)\]")
+# A bracketed group of source references. Besides [1], small local models write [n1],
+# [source 1] or [1, 2]; markdown links ([text](url)) never match.
+_REF = r"(?:(?:n|source|src|#)\s*)?\d+"
+_CITATION = re.compile(rf"\s?\[({_REF}(?:\s*[,;]\s*{_REF})*)\](?!\()", re.IGNORECASE)
+_NUMBER = re.compile(r"\d+")
 
 
 class WriterError(Exception):
@@ -52,7 +56,7 @@ async def writer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
     prompt = (
         f"{_brief_block(brief)}\n\n"
         "<untrusted_sources>\n" + "\n".join(blocks) + "\n</untrusted_sources>\n\n"
-        "Write the article described in the brief, citing the sources above as [n]."
+        "Write the article described in the brief, citing the sources above by id, e.g. [1]."
     )
     markdown = await deps.llm.text(tier="opus", system=prompts.WRITER, prompt=prompt, effort="high")
 
@@ -60,11 +64,13 @@ async def writer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
     used: set[int] = set()
 
     def keep_valid(match: re.Match[str]) -> str:
-        number = int(match.group(1))
-        if number not in url_by_number:
+        """Rewrite a citation group as [1][2], dropping numbers that match no source."""
+        valid = [n for n in map(int, _NUMBER.findall(match.group(1))) if n in url_by_number]
+        if not valid:
             return ""
-        used.add(number)
-        return match.group(0)
+        used.update(valid)
+        leading_space = match.group(0)[: len(match.group(0)) - len(match.group(0).lstrip())]
+        return leading_space + "".join(f"[{n}]" for n in valid)
 
     cleaned = _CITATION.sub(keep_valid, markdown).strip()
     citations = [
