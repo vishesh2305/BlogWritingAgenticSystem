@@ -51,8 +51,19 @@ One addition after GREEN: in cycle C, `test_app_lifespan_wires_a_real_run_manage
 
 `uvicorn cwas.main:app`: `/health` → `{"status":"ok"}`; empty prompt → 422; unknown run → 404; OpenAPI lists all 5 routes. Without `TAVILY_API_KEY`, startup fails with `ConfigError: TAVILY_API_KEY is required for web research`.
 
+## Live end-to-end runs (local Ollama, no API keys)
+
+Setup: `qwen3-vl:8b-instruct` on an RTX 4060 (8 GB), DuckDuckGo search, hashing embedder, no LanguageTool. Prompt: *"Write a beginner-friendly blog post about how home solar panels work and whether they are worth it in India."*
+
+| Run | Result | Time |
+|---|---|---|
+| 1 (`a833974`) | Completed, but **0 citations**: the model wrote `[n1]` (the prompt said "[n]"), which the parser dropped. The brief also had **0 search queries** (the field was optional). | 2m52s (writer 127s) |
+| 2 (`9d1022b`, after the RED `6f545df` → GREEN fix) | Completed: 6 search queries, 1,934 words, citations `[1]`–`[3]` with a Sources section. One DuckDuckGo query returned no results and was recorded as a warning. | 3m34s (writer 170s) |
+
+Both defects were turned into regression tests before they were fixed. Remaining quality notes: the model cited only 3 of the pages it fetched, and some sentences open with "[1] says…". The Fact-Checker and Rephraser agents (Phase 3) are planned to handle this.
+
 ## Known gaps (not verified)
 
-- **No live end-to-end run.** No Anthropic or Tavily keys were available, so the real model and search calls haven't been exercised. Every external call is covered only through mocks and fakes.
+- **No live run on the Anthropic or Tavily backends.** No keys were available; those code paths are covered only by mocks.
 - **Docker images not built.** The Docker daemon wasn't running; only `docker compose config` was validated.
 - **The CI workflow hasn't run yet.** It runs once the branch is pushed.
