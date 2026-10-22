@@ -19,7 +19,9 @@
 | B | LLM wrapper, 5 agents, LangGraph orchestrator | `a65fb32`: 7 collection errors, `ModuleNotFoundError: cwas.llm` | `c92a00b`: 103 passed, coverage 98.5%, ruff + mypy strict clean |
 | C | Run manager, HTTP + SSE API, wiring | `adeda6e`: 2 collection errors, `ModuleNotFoundError: cwas.runs` | `498fe5e`: 120 passed, coverage 98.03%, ruff + mypy strict clean |
 
-Every RED was a compile-time (import) failure caused by the missing implementation, not by broken test setup.
+| D | Free local LLM (Ollama) + DuckDuckGo search | `c5d9881`: 2 collection errors (`OllamaLLM`, `DuckDuckGoSearch` missing); `tests/test_wiring.py` → 6 failed, 1 passed | `a833974`: 137 passed, coverage 98%, ruff + mypy strict clean |
+
+Every RED in cycles A–C was a compile-time (import) failure caused by the missing implementation, not by broken test setup. In cycle D the wiring tests failed at runtime for the intended reason: Ollama settings and wiring didn't exist yet.
 
 One addition after GREEN: in cycle C, `test_app_lifespan_wires_a_real_run_manager` was added to cover existing app-startup code. It was not written test-first.
 

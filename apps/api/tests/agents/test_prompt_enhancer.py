@@ -60,3 +60,7 @@ def test_no_clarification_after_max_rounds() -> None:
         "clarification_rounds": 1,
     }
     assert not needs_clarification(state, settings)
+
+
+def test_brief_schema_requires_search_queries() -> None:
+    assert "search_queries" in Brief.model_json_schema()["required"]

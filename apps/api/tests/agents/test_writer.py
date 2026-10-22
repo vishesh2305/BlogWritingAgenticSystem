@@ -76,3 +76,30 @@ async def test_chunks_from_the_same_page_share_one_source_number() -> None:
 async def test_raises_when_knowledge_base_is_empty() -> None:
     with pytest.raises(WriterError):
         await writer({"run_id": "empty", "brief": make_brief()}, make_deps())
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Cheap [n1]. Durable [n2].", "Cheap [1]. Durable [2]."),
+        ("Cheap [source 1].", "Cheap [1]."),
+        ("Cheap [Source 2].", "Cheap [2]."),
+        ("Cheap [1, 2].", "Cheap [1][2]."),
+        ("Cheap [n1, n9].", "Cheap [1]."),
+    ],
+)
+async def test_citation_variants_from_small_models_are_normalised(raw: str, expected: str) -> None:
+    deps = await seeded_deps(FakeLLM(texts=[raw]))
+
+    update = await writer({"run_id": "r", "brief": make_brief()}, deps)
+
+    assert update["drafts"][0].markdown == expected
+
+
+async def test_markdown_links_and_checkboxes_are_not_treated_as_citations() -> None:
+    text = "See [the guide](https://x.io) and [x] done [1]."
+    deps = await seeded_deps(FakeLLM(texts=[text]))
+
+    update = await writer({"run_id": "r", "brief": make_brief()}, deps)
+
+    assert update["drafts"][0].markdown == text
