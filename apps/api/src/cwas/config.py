@@ -11,7 +11,15 @@ Tier = Literal["opus", "sonnet", "haiku"]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Third-party services. ANTHROPIC_API_KEY is read by the Anthropic SDK itself.
+    # LLM backend: a local Ollama model (free) or the Anthropic API (ANTHROPIC_API_KEY,
+    # read by the SDK itself).
+    llm_provider: Literal["ollama", "anthropic"] = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen3-vl:8b-instruct"
+    ollama_num_ctx: int = 16384
+    ollama_timeout: float = 900.0
+
+    # Optional paid services; free fallbacks are used when a key is missing.
     tavily_api_key: SecretStr | None = None
     voyage_api_key: SecretStr | None = None
     languagetool_url: str | None = None

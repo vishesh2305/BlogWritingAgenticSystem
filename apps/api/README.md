@@ -8,15 +8,28 @@ prompt ─▶ 1 Prompt Enhancer ─(unclear?)─▶ ask user ─┐
           ─▶ 2 Web Research ─▶ 3 Knowledge Base ─▶ 5 Writer ─▶ 10 Grammar ─▶ article
 ```
 
-## Run it
+## Run it (free: no API keys)
+
+By default every agent runs on a **local Ollama model** and web research uses **DuckDuckGo**, so you need no paid keys.
 
 ```bash
+ollama pull qwen3-vl:8b-instruct  # once; the default model (~6 GB, fits an 8 GB GPU)
 cd apps/api
 python -m pip install uv          # once
 uv sync                           # installs Python 3.13 deps into .venv
-cp .env.example .env              # add ANTHROPIC_API_KEY and TAVILY_API_KEY
-uv run uvicorn cwas.main:app --reload --port 8000
+cp .env.example .env              # defaults are fine
+uv run uvicorn cwas.main:app --port 8000
 ```
+
+The server checks at startup that Ollama is running and the model is pulled, and stops with a clear message if not. To use another local model, set `OLLAMA_MODEL` to any name from `ollama list`.
+
+| Setting | Free default | Paid upgrade |
+|---|---|---|
+| LLM | `LLM_PROVIDER=ollama` | `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` |
+| Search | DuckDuckGo (rate-limited) | `TAVILY_API_KEY` |
+| Embeddings | local hashing embedder | `VOYAGE_API_KEY` |
+
+A local 8B model is slower and writes less polished prose than Claude. Expect a few minutes per article on an RTX 4060.
 
 To turn on grammar auto-correction, start LanguageTool:
 
@@ -50,7 +63,7 @@ curl -X POST localhost:8000/runs/<run_id>/answer -H 'content-type: application/j
 ## Develop
 
 ```bash
-uv run pytest --cov          # 120 tests, coverage gate 80%
+uv run pytest --cov          # 137 tests, coverage gate 80%
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src              # strict
 ```
@@ -63,10 +76,10 @@ Tests never touch the network. HTTP is mocked with `respx`, and the agents run a
 src/cwas/
   agents/      prompt_enhancer, researcher, kb_builder, writer, grammar, prompts, deps
   graph/       state (RunState), builder (orchestrator), events, finalize
-  tools/       search (Tavily), scrape (robots + SSRF guard), embed (Voyage/hashing), grammar, url_safety
+  tools/       search (Tavily / DuckDuckGo), scrape (robots + SSRF guard), embed (Voyage/hashing), grammar, url_safety
   kb/          chunker, store (vector store), knowledge_base
   api/app.py   FastAPI routes      runs.py  run lifecycle + event fan-out
-  llm.py       Anthropic wrapper (model tiers, effort, refusal fallbacks)
+  llm.py       LLM interface + Anthropic backend      ollama_llm.py  local Ollama backend
   wiring.py    production dependency wiring      config.py  settings
 ```
 

@@ -64,5 +64,5 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["trafilatura.*", "textstat.*"]
+module = ["trafilatura.*", "textstat.*", "ddgs.*"]
 ignore_missing_imports = true

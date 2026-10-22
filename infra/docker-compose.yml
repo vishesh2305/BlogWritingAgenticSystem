@@ -45,6 +45,10 @@ services:
         required: false
     environment:
       LANGUAGETOOL_URL: http://languagetool:8010
+      # Ollama runs on the host machine (GPU), not in this stack.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
