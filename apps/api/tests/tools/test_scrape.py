@@ -36,11 +36,15 @@ def html(body: str = ARTICLE_HTML) -> httpx.Response:
 
 @respx.mock
 async def test_fetch_extracts_main_article_text_and_title() -> None:
-    respx.get("https://solar.com/robots.txt").mock(return_value=httpx.Response(200, text=ROBOTS_ALLOW))
+    respx.get("https://solar.com/robots.txt").mock(
+        return_value=httpx.Response(200, text=ROBOTS_ALLOW)
+    )
     respx.get("https://solar.com/guide").mock(return_value=html())
 
     async with httpx.AsyncClient() as client:
-        page = await Scraper(client, url_guard=allow_all).fetch("https://solar.com/guide", "competitor")
+        page = await Scraper(client, url_guard=allow_all).fetch(
+            "https://solar.com/guide", "competitor"
+        )
 
     assert page is not None
     assert page.url == "https://solar.com/guide"
@@ -52,7 +56,9 @@ async def test_fetch_extracts_main_article_text_and_title() -> None:
 
 @respx.mock
 async def test_fetch_respects_robots_disallow() -> None:
-    respx.get("https://private.com/robots.txt").mock(return_value=httpx.Response(200, text=ROBOTS_DENY))
+    respx.get("https://private.com/robots.txt").mock(
+        return_value=httpx.Response(200, text=ROBOTS_DENY)
+    )
     page_route = respx.get("https://private.com/post").mock(return_value=html())
 
     async with httpx.AsyncClient() as client:
@@ -95,7 +101,9 @@ async def test_fetch_returns_none_on_http_error() -> None:
 async def test_fetch_returns_none_for_non_html_content() -> None:
     respx.get("https://files.com/robots.txt").mock(return_value=httpx.Response(404))
     respx.get("https://files.com/a.pdf").mock(
-        return_value=httpx.Response(200, content=b"%PDF", headers={"content-type": "application/pdf"})
+        return_value=httpx.Response(
+            200, content=b"%PDF", headers={"content-type": "application/pdf"}
+        )
     )
 
     async with httpx.AsyncClient() as client:

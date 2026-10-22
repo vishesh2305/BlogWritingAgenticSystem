@@ -24,7 +24,9 @@ async def test_ingest_chunks_and_stores_every_page() -> None:
     kb = make_kb()
     long_text = "\n\n".join(f"Paragraph {i} about heat pumps and insulation." for i in range(20))
 
-    stored = await kb.ingest("run", [page("https://a.com", long_text), page("https://b.com", "Short.")])
+    stored = await kb.ingest(
+        "run", [page("https://a.com", long_text), page("https://b.com", "Short.")]
+    )
 
     assert stored > 2
 

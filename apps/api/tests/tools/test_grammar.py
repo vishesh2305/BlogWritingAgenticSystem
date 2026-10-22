@@ -13,7 +13,9 @@ from cwas.tools.grammar import (
 LT_URL = "http://lt:8010/v2/check"
 
 
-def match(offset: int, length: int, replacement: str | None, issue: str = "grammar") -> GrammarMatch:
+def match(
+    offset: int, length: int, replacement: str | None, issue: str = "grammar"
+) -> GrammarMatch:
     return GrammarMatch(
         offset=offset,
         length=length,

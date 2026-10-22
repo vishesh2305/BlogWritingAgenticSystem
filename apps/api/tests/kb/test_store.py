@@ -51,7 +51,10 @@ async def test_search_can_filter_by_source_type() -> None:
     store = InMemoryVectorStore()
     await store.add(
         "r",
-        [chunk("s", "fact", source_type="source"), chunk("c", "blog", "https://b.com", "competitor")],
+        [
+            chunk("s", "fact", source_type="source"),
+            chunk("c", "blog", "https://b.com", "competitor"),
+        ],
         [[1.0, 0.0], [1.0, 0.0]],
     )
 

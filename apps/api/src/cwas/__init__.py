@@ -1,2 +1,1 @@
-def hello() -> str:
-    return "Hello from cwas!"
+"""Content Writing Multimodal Multi-Agent System (CWAS) backend."""
