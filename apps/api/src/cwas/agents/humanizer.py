@@ -17,6 +17,24 @@ from cwas.models import AIScore, Brief, FlaggedParagraph, Rewrite
 from cwas.tools.ai_score import ai_score, flag_paragraphs, is_prose, split_blocks
 
 _CITATION_NUMBER = re.compile(r"\[(\d+)\]")
+_DASH_RANGE = re.compile(r"(\d)\s*—\s*(\d)")
+_DASH_PAIR = re.compile(r"\s*—\s*([^—\n.!?]+?)\s*—\s*")
+_DASH = re.compile(r"\s*—\s*")
+_DOUBLED_PUNCTUATION = re.compile(r",\s*([,.;:!?])")
+
+
+def replace_em_dashes(text: str) -> str:
+    """Number ranges get an en dash; dashes around or before a clause become commas."""
+    text = _DASH_RANGE.sub(r"\1–\2", text)
+    text = _DASH_PAIR.sub(r", \1, ", text)
+    text = _DASH.sub(", ", text)
+    return _DOUBLED_PUNCTUATION.sub(r"\1", text)
+
+
+def _without_em_dashes(text: str) -> str:
+    if "—" not in text:
+        return text
+    return "\n\n".join(replace_em_dashes(b) if is_prose(b) else b for b in split_blocks(text))
 
 
 async def humanizer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
@@ -33,6 +51,10 @@ async def _humanize(
 ) -> tuple[str, AIScore]:
     threshold = deps.settings.ai_score_threshold
     score = ai_score(text)
+    if score.score >= threshold:
+        # Em dashes are a punctuation habit, not wording; fixing them needs no model.
+        text = _without_em_dashes(text)
+        score = ai_score(text)
     rounds = 0
     while score.score >= threshold and rounds < deps.settings.max_humanize_rounds:
         rounds += 1
@@ -51,6 +73,7 @@ async def _humanize(
             break
 
         candidate, rejected = _apply(blocks, targets, rewrite)
+        candidate = _without_em_dashes(candidate)
         if rejected:
             warnings.append(
                 f"Humanizer rejected {rejected} rewritten paragraph(s) that changed citations"
