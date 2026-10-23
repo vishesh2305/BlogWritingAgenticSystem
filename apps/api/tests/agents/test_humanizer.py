@@ -1,7 +1,9 @@
 from typing import Any
 
+import pytest
+
 from cwas.agents import prompts
-from cwas.agents.humanizer import humanizer
+from cwas.agents.humanizer import humanizer, replace_em_dashes
 from cwas.llm import LLMError
 from cwas.models import Citation, Draft, Rewrite, RewrittenParagraph
 from cwas.tools.ai_score import ai_score
@@ -168,3 +170,38 @@ async def test_when_only_the_whole_article_reads_robotic_every_prose_paragraph_i
     prompt = llm.calls[0]["prompt"]
     assert all(f'<paragraph index="{i}"' in prompt for i in range(1, 5))
     assert '<paragraph index="0"' not in prompt
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("a trend—it's smart", "a trend, it's smart"),
+        ("panels — especially the best ones — work", "panels, especially the best ones, work"),
+        ("savings within 3—5 years", "savings within 3–5 years"),
+        ("plain text, no dashes", "plain text, no dashes"),
+    ],
+)
+def test_replace_em_dashes(before: str, after: str) -> None:
+    assert replace_em_dashes(before) == after
+
+
+async def test_em_dashes_in_prose_are_replaced_without_an_llm_call() -> None:
+    # Found in a live run: one em dash per paragraph is never flagged on its own, and small
+    # models ignore the "use em dashes sparingly" rule, so the score stayed above 10.
+    dashed = HUMAN_PARAGRAPH.replace(": one installer", " — one installer").replace(
+        ", and that", " — and that"
+    )
+    extra = "Payback took 3—5 years [1], and the inverter — the part that fails — was replaced."
+    text = f"# Solar — worth it?\n\n{dashed}\n\n{extra}"
+    assert ai_score(text).score >= 10
+    llm = FakeLLM()
+
+    update = await humanizer(state(text), make_deps(llm=llm))
+
+    [draft] = update["drafts"]
+    assert llm.calls == []
+    assert draft.markdown.startswith("# Solar — worth it?\n\n")  # headings are left alone
+    assert "made no sense, one installer" in draft.markdown
+    assert "3–5 years [1], and the inverter, the part that fails, was replaced." in draft.markdown
+    assert draft.ai_score is not None
+    assert draft.ai_score.score < 10
