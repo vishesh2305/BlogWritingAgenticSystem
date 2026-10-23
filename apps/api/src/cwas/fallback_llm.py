@@ -1,5 +1,6 @@
 """Chains LLM backends: each call goes to the first provider that answers."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Sequence
@@ -14,18 +15,21 @@ logger = logging.getLogger(__name__)
 
 class FallbackLLM:
     """Tries providers in order. A rate-limited provider sits out its cooldown, but is still
-    tried last rather than failing the call outright."""
+    tried last rather than failing the call outright. When every provider is rate-limited, the
+    call waits once for the soonest to recover and tries again."""
 
     def __init__(
         self,
         providers: Sequence[tuple[str, LLM]],
         clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         default_cooldown: float = 30.0,
     ) -> None:
         if not providers:
             raise ValueError("FallbackLLM needs at least one provider")
         self._providers = list(providers)
         self._clock = clock
+        self._sleep = sleep
         self._default_cooldown = default_cooldown
         self._cooling_until: dict[str, float] = {}
 
@@ -58,20 +62,27 @@ class FallbackLLM:
         )
 
     async def _first[R](self, call: Callable[[LLM], Awaitable[R]]) -> R:
-        now = self._clock()
-        ready = [p for p in self._providers if self._cooling_until.get(p[0], 0.0) <= now]
-        order = ready + [p for p in self._providers if p not in ready]
         errors: list[str] = []
-        for position, (name, llm) in enumerate(order):
-            try:
-                return await call(llm)
-            except LLMError as exc:
-                if isinstance(exc, LLMRateLimitError):
-                    pause = exc.retry_after or self._default_cooldown
-                    self._cooling_until[name] = self._clock() + pause
-                errors.append(f"{name}: {exc}")
-                if position + 1 < len(order):
-                    logger.warning(
-                        "%s failed (%s); falling back to %s", name, exc, order[position + 1][0]
-                    )
+        for is_retry in (False, True):
+            errors, pauses = [], []
+            now = self._clock()
+            ready = [p for p in self._providers if self._cooling_until.get(p[0], 0.0) <= now]
+            order = ready + [p for p in self._providers if p not in ready]
+            for position, (name, llm) in enumerate(order):
+                try:
+                    return await call(llm)
+                except LLMError as exc:
+                    if isinstance(exc, LLMRateLimitError):
+                        pause = exc.retry_after or self._default_cooldown
+                        self._cooling_until[name] = self._clock() + pause
+                        pauses.append(pause)
+                    errors.append(f"{name}: {exc}")
+                    if position + 1 < len(order):
+                        logger.warning(
+                            "%s failed (%s); falling back to %s", name, exc, order[position + 1][0]
+                        )
+            if is_retry or len(pauses) < len(order):
+                break
+            logger.warning("every LLM provider is rate-limited; waiting %.1fs", min(pauses))
+            await self._sleep(min(pauses))
         raise LLMError("every LLM provider failed: " + "; ".join(errors))

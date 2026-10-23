@@ -1,8 +1,8 @@
 """Agent 7 - Humanizer: rewrites machine-sounding paragraphs until the AI-likeness score is low.
 
 Only flagged prose paragraphs are rewritten, so headings, code and the rest of the article
-stay byte-for-byte intact. A rewrite that changes a paragraph's citations is rejected, and a
-round that does not lower the score is discarded.
+stay byte-for-byte intact. A rewrite that changes a paragraph's citations, adds a number or
+drops the primary keyword is rejected, and a round that does not lower the score is discarded.
 """
 
 import re
@@ -15,8 +15,8 @@ from cwas.graph.state import RunState
 from cwas.llm import LLMError
 from cwas.models import AIScore, Brief, FlaggedParagraph, Rewrite
 from cwas.tools.ai_score import ai_score, flag_paragraphs, is_prose, split_blocks
+from cwas.tools.guards import rewrite_violations
 
-_CITATION_NUMBER = re.compile(r"\[(\d+)\]")
 _DASH_RANGE = re.compile(r"(\d)\s*—\s*(\d)")
 _DASH_PAIR = re.compile(r"\s*—\s*([^—\n.!?]+?)\s*—\s*")
 _DASH = re.compile(r"\s*—\s*")
@@ -72,11 +72,12 @@ async def _humanize(
             warnings.append(f"Humanizer skipped; the draft was kept as written: {exc}")
             break
 
-        candidate, rejected = _apply(blocks, targets, rewrite)
+        candidate, rejected = _apply(blocks, targets, rewrite, brief.primary_keyword)
         candidate = _without_em_dashes(candidate)
         if rejected:
             warnings.append(
-                f"Humanizer rejected {rejected} rewritten paragraph(s) that changed citations"
+                f"Humanizer rejected {len(rejected)} rewritten paragraph(s): "
+                + "; ".join(sorted(set(rejected)))
             )
         candidate_score = ai_score(candidate)
         if candidate_score.score < score.score:
@@ -115,20 +116,20 @@ def _prompt(brief: Brief, text: str, blocks: list[str], targets: list[FlaggedPar
     )
 
 
-def _apply(blocks: list[str], targets: list[FlaggedParagraph], rewrite: Rewrite) -> tuple[str, int]:
+def _apply(
+    blocks: list[str], targets: list[FlaggedParagraph], rewrite: Rewrite, keyword: str
+) -> tuple[str, list[str]]:
+    """Apply the safe rewrites; return the new text and why each unsafe one was rejected."""
     allowed = {t.index for t in targets}
     updated = list(blocks)
-    rejected = 0
+    rejected: list[str] = []
     for paragraph in rewrite.paragraphs:
         new_text = paragraph.text.strip()
         if paragraph.index not in allowed or not new_text:
             continue
-        if _citations(new_text) != _citations(blocks[paragraph.index]):
-            rejected += 1
+        violations = rewrite_violations(blocks[paragraph.index], new_text, keyword=keyword)
+        if violations:
+            rejected.append("; ".join(violations))
             continue
         updated[paragraph.index] = new_text
     return "\n\n".join(updated), rejected
-
-
-def _citations(text: str) -> set[int]:
-    return {int(n) for n in _CITATION_NUMBER.findall(text)}

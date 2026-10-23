@@ -20,6 +20,7 @@ from cwas.kb.store import InMemoryVectorStore
 from cwas.llm import LLM, AnthropicLLM
 from cwas.ollama_llm import OllamaLLM
 from cwas.runs import RunManager
+from cwas.throttled_llm import ThrottledLLM
 from cwas.tools.embed import Embedder, GeminiEmbedder, HashingEmbedder, VoyageEmbedder
 from cwas.tools.grammar import LanguageToolChecker
 from cwas.tools.scrape import InMemoryPageCache, Scraper
@@ -53,27 +54,44 @@ async def _check_ollama_model(http: httpx.AsyncClient, settings: Settings) -> No
         )
 
 
+def _throttled(llm: LLM, requests_per_minute: int, settings: Settings) -> ThrottledLLM:
+    return ThrottledLLM(
+        llm,
+        requests_per_minute=requests_per_minute,
+        max_concurrent=settings.llm_max_concurrency,
+        max_wait=settings.llm_max_wait,
+    )
+
+
 def _build_gemini(settings: Settings, http: httpx.AsyncClient) -> LLM:
     if settings.gemini_api_key is None:
         raise ConfigError(
             "GEMINI_API_KEY is required when LLM_PROVIDER=gemini "
             "(or set LLM_PROVIDER=ollama to use a free local model)"
         )
-    gemini = GeminiLLM(
-        http,
-        api_key=settings.gemini_api_key.get_secret_value(),
-        models=settings.gemini_models(),
-        timeout=settings.hosted_llm_timeout,
+    gemini = _throttled(
+        GeminiLLM(
+            http,
+            api_key=settings.gemini_api_key.get_secret_value(),
+            models=settings.gemini_models(),
+            timeout=settings.hosted_llm_timeout,
+        ),
+        settings.gemini_requests_per_minute,
+        settings,
     )
     if settings.groq_api_key is None:
         logger.warning("GROQ_API_KEY not set; Gemini runs without a fallback")
         return gemini
 
-    groq = GroqLLM(
-        http,
-        api_key=settings.groq_api_key.get_secret_value(),
-        models=settings.groq_models(),
-        timeout=settings.hosted_llm_timeout,
+    groq = _throttled(
+        GroqLLM(
+            http,
+            api_key=settings.groq_api_key.get_secret_value(),
+            models=settings.groq_models(),
+            timeout=settings.hosted_llm_timeout,
+        ),
+        settings.groq_requests_per_minute,
+        settings,
     )
     logger.info("using Gemini %s with Groq fallback", settings.gemini_model_opus)
     return FallbackLLM([("gemini", gemini), ("groq", groq)])

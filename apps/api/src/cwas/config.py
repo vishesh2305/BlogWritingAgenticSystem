@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     groq_model_sonnet: str = "openai/gpt-oss-120b"
     groq_model_haiku: str = "openai/gpt-oss-20b"
     hosted_llm_timeout: float = 300.0
+    # Client-side limits; match them to your API tier. A call that would wait longer than
+    # LLM_MAX_WAIT seconds for a slot goes to the fallback provider instead.
+    gemini_requests_per_minute: int = 10
+    groq_requests_per_minute: int = 30
+    llm_max_concurrency: int = 4
+    llm_max_wait: float = 5.0
 
     # Optional paid services; free fallbacks are used when a key is missing.
     tavily_api_key: SecretStr | None = None
