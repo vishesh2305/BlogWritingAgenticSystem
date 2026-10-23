@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class FallbackLLM:
     """Tries providers in order. A rate-limited provider sits out its cooldown, but is still
     tried last rather than failing the call outright. When every provider is rate-limited, the
-    call waits once for the soonest to recover and tries again."""
+    call waits once for the soonest to recover (up to max_retry_wait) and tries again."""
 
     def __init__(
         self,
@@ -24,6 +24,7 @@ class FallbackLLM:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         default_cooldown: float = 30.0,
+        max_retry_wait: float = 60.0,
     ) -> None:
         if not providers:
             raise ValueError("FallbackLLM needs at least one provider")
@@ -31,6 +32,7 @@ class FallbackLLM:
         self._clock = clock
         self._sleep = sleep
         self._default_cooldown = default_cooldown
+        self._max_retry_wait = max_retry_wait
         self._cooling_until: dict[str, float] = {}
 
     @property
@@ -81,7 +83,7 @@ class FallbackLLM:
                         logger.warning(
                             "%s failed (%s); falling back to %s", name, exc, order[position + 1][0]
                         )
-            if is_retry or len(pauses) < len(order):
+            if is_retry or len(pauses) < len(order) or min(pauses) > self._max_retry_wait:
                 break
             logger.warning("every LLM provider is rate-limited; waiting %.1fs", min(pauses))
             await self._sleep(min(pauses))
