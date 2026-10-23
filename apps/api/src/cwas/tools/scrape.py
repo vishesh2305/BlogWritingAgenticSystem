@@ -1,8 +1,10 @@
 """Polite, SSRF-safe page fetching with main-content extraction."""
 
+import json
 import logging
+import re
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
@@ -16,6 +18,31 @@ logger = logging.getLogger(__name__)
 
 MAX_REDIRECTS = 5
 REDIRECT_CODES = {301, 302, 303, 307, 308}
+_JSON_LD = re.compile(
+    r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _schema_types(html: str) -> list[str]:
+    """Every schema.org @type declared in the page's JSON-LD blocks."""
+    types: set[str] = set()
+
+    def collect(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                collect(item)
+        elif isinstance(node, dict):
+            declared = node.get("@type")
+            types.update([declared] if isinstance(declared, str) else declared or [])
+            collect(node.get("@graph"))
+
+    for block in _JSON_LD.findall(html):
+        try:
+            collect(json.loads(block))
+        except json.JSONDecodeError:
+            continue
+    return sorted(types)
 
 
 class PageFetcher(Protocol):
@@ -67,7 +94,13 @@ class Scraper:
             logger.info("skip %s: content-type %s", url, content_type)
             return None
 
-        text = trafilatura.extract(response.text, include_comments=False, include_tables=True)
+        text = trafilatura.extract(
+            response.text,
+            output_format="markdown",
+            include_formatting=True,  # keeps the headings competitor outlines are read from
+            include_comments=False,
+            include_tables=True,
+        )
         if not text:
             return None
         metadata = trafilatura.extract_metadata(response.text)
@@ -79,6 +112,8 @@ class Scraper:
             text=text,
             source_type=source_type,
             fetched_at=datetime.now(UTC),
+            description=(metadata.description if metadata and metadata.description else ""),
+            schema_types=_schema_types(response.text),
         )
         if self._cache:
             await self._cache.set(url, page)

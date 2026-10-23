@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     max_sources: int = 12
     scrape_concurrency: int = 6
 
+    # Knowledge base
+    max_facts_per_page: int = 15
+
     # Prompt enhancer
     clarification_threshold: float = 0.6
     max_clarification_rounds: int = 1

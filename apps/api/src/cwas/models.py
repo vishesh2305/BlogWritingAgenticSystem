@@ -19,9 +19,23 @@ class SearchResult(BaseModel):
 class ScrapedPage(BaseModel):
     url: str
     title: str
-    text: str
+    text: str = Field(description="Main content as Markdown, headings kept")
     source_type: SourceType = "source"
     fetched_at: datetime
+    # SEO baseline of the page, compared against when optimizing our own article.
+    description: str = ""
+    schema_types: list[str] = Field(default_factory=list)
+
+
+class Fact(BaseModel):
+    """A source sentence that carries a number: the only place statistics may come from."""
+
+    id: str
+    text: str
+    numbers: list[str]
+    source_url: str
+    source_title: str
+    source_type: SourceType = "source"
 
 
 class Chunk(BaseModel):

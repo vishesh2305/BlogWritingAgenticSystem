@@ -3,7 +3,7 @@
 import operator
 from typing import Annotated, TypedDict
 
-from cwas.models import Brief, Draft, ScrapedPage
+from cwas.models import Brief, Draft, Fact, ScrapedPage
 
 
 class RunState(TypedDict, total=False):
@@ -14,6 +14,7 @@ class RunState(TypedDict, total=False):
     brief: Brief
     sources: list[ScrapedPage]
     kb_chunks: int
+    facts: list[Fact]
     drafts: list[Draft]
     final_article: str
     warnings: Annotated[list[str], operator.add]
