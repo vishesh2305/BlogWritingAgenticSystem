@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from cwas.llm import FALLBACK_BETA, AnthropicLLM, LLMError, LLMRefusalError
+from cwas.usage import UsageMeter, metering
 
 MODELS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"}
 
@@ -112,3 +113,14 @@ async def test_text_joins_text_blocks_and_skips_thinking() -> None:
     assert call["model"] == "claude-opus-5-5"
     assert call["max_tokens"] == 9000
     assert call["output_config"] == {"effort": "high"}
+
+
+async def test_token_usage_is_recorded() -> None:
+    llm, _ = make_llm(response(usage=SimpleNamespace(input_tokens=4, output_tokens=2)))
+    meter = UsageMeter()
+
+    with metering(meter):
+        await llm.text(tier="haiku", system="s", prompt="p")
+        await llm.structured(tier="haiku", system="s", prompt="p", schema=Answer)
+
+    assert (meter.total.calls, meter.total.input_tokens, meter.total.output_tokens) == (2, 8, 4)

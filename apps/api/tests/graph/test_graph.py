@@ -8,6 +8,7 @@ from cwas.agents.researcher import ResearchError
 from cwas.graph.builder import build_graph
 from cwas.graph.finalize import render_article
 from cwas.models import Brief, Citation, Draft
+from cwas.usage import UsageMeter, metering
 from tests.fakes import FakeLLM, FakeScraper, FakeSearch, make_brief, make_deps
 
 PAGES = {
@@ -121,3 +122,16 @@ def test_render_article_appends_numbered_sources() -> None:
 
 def test_render_article_without_citations_has_no_sources_section() -> None:
     assert render_article(Draft(variant_id="v1", markdown="Body.")) == "Body.\n"
+
+
+async def test_agent_finished_events_report_the_tokens_each_agent_used() -> None:
+    llm = FakeLLM(structured={Brief: [make_brief()]}, texts=[ARTICLE])
+    graph = build_graph(deps_with(llm), checkpointer=InMemorySaver())
+
+    with metering(UsageMeter()):
+        events, _ = await run_to_end(graph, {"run_id": "r9", "user_prompt": "solar"}, "t9")
+
+    tokens = {e["agent"]: e["tokens"] for e in events if e["type"] == "agent_finished"}
+    assert tokens["prompt_enhancer"] == 30
+    assert tokens["writer"] == 30
+    assert tokens["researcher"] == 0

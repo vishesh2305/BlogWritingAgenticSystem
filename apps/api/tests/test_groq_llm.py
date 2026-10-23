@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from cwas.groq_llm import GroqLLM
 from cwas.llm import LLMError, LLMRateLimitError
+from cwas.usage import UsageMeter, metering
 
 CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODELS = {"opus": "openai/gpt-oss-120b", "sonnet": "openai/gpt-oss-120b", "haiku": "llama-small"}
@@ -192,3 +193,17 @@ async def test_network_failure_raises_llm_error() -> None:
     async with httpx.AsyncClient() as client:
         with pytest.raises(LLMError, match="Groq"):
             await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+
+@respx.mock
+async def test_token_usage_is_recorded() -> None:
+    body = reply("ok").json()
+    body["usage"] = {"prompt_tokens": 7, "completion_tokens": 9}
+    respx.post(CHAT_URL).mock(return_value=httpx.Response(200, json=body))
+    meter = UsageMeter()
+
+    async with httpx.AsyncClient() as client:
+        with metering(meter):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+    assert (meter.total.input_tokens, meter.total.output_tokens) == (7, 9)

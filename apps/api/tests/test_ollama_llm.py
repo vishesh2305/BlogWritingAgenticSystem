@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from cwas.llm import LLMError
 from cwas.ollama_llm import OllamaLLM
+from cwas.usage import UsageMeter, metering
 
 CHAT_URL = "http://localhost:11434/api/chat"
 
@@ -155,3 +156,26 @@ async def test_http_error_raises_llm_error() -> None:
     async with httpx.AsyncClient() as client:
         with pytest.raises(LLMError, match="model not found"):
             await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+
+@respx.mock
+async def test_token_usage_is_recorded() -> None:
+    respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "ok"},
+                "done": True,
+                "done_reason": "stop",
+                "prompt_eval_count": 5,
+                "eval_count": 6,
+            },
+        )
+    )
+    meter = UsageMeter()
+
+    async with httpx.AsyncClient() as client:
+        with metering(meter):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+    assert (meter.total.input_tokens, meter.total.output_tokens) == (5, 6)

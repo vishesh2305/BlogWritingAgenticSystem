@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from cwas.gemini_llm import GeminiLLM
 from cwas.llm import LLMError, LLMRateLimitError, LLMRefusalError
+from cwas.usage import UsageMeter, metering
 
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 FLASH_URL = f"{BASE}/gemini-flash:generateContent"
@@ -220,3 +221,33 @@ async def test_malformed_response_raises_llm_error() -> None:
     async with httpx.AsyncClient() as client:
         with pytest.raises(LLMError, match="no candidates"):
             await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+
+@respx.mock
+async def test_token_usage_is_recorded_including_thinking_tokens() -> None:
+    body = reply("ok").json()
+    body["usageMetadata"] = {
+        "promptTokenCount": 12,
+        "candidatesTokenCount": 30,
+        "thoughtsTokenCount": 8,
+    }
+    respx.post(FLASH_URL).mock(return_value=httpx.Response(200, json=body))
+    meter = UsageMeter()
+
+    async with httpx.AsyncClient() as client:
+        with metering(meter):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+    assert (meter.total.calls, meter.total.input_tokens, meter.total.output_tokens) == (1, 12, 38)
+
+
+@respx.mock
+async def test_missing_usage_still_counts_the_call() -> None:
+    respx.post(FLASH_URL).mock(return_value=reply("ok"))
+    meter = UsageMeter()
+
+    async with httpx.AsyncClient() as client:
+        with metering(meter):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+    assert (meter.total.calls, meter.total.input_tokens) == (1, 0)

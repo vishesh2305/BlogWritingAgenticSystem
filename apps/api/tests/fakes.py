@@ -14,6 +14,7 @@ from cwas.models import Brief, ScrapedPage, SearchResult, SourceType
 from cwas.tools.embed import HashingEmbedder
 from cwas.tools.grammar import GrammarMatch
 from cwas.tools.search import SearchError
+from cwas.usage import record_usage
 
 
 class FakeLLM:
@@ -40,6 +41,7 @@ class FakeLLM:
                 "schema": schema,
             }
         )
+        record_usage(10, 20)
         queue = self._structured[schema]
         return queue.pop(0) if len(queue) > 1 else queue[0]
 
@@ -53,6 +55,7 @@ class FakeLLM:
         max_tokens: int = 16000,
     ) -> str:
         self.calls.append({"kind": "text", "tier": tier, "system": system, "prompt": prompt})
+        record_usage(10, 20)
         return self._texts.pop(0) if len(self._texts) > 1 else self._texts[0]
 
 

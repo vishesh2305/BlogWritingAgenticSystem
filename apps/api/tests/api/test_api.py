@@ -72,6 +72,7 @@ async def test_create_run_completes_with_cited_article(client: httpx.AsyncClient
     assert run["brief"]["primary_keyword"] == "home solar panels"
     assert run["error"] is None
     assert 0 <= run["ai_score"]["score"] < 10
+    assert run["usage"] == {"calls": 2, "input_tokens": 20, "output_tokens": 40}
     assert set(run["ai_score"]["signals"]) >= {"stock_phrases", "uniform_rhythm"}
 
 
