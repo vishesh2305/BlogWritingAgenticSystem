@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     # Knowledge base
     max_facts_per_page: int = 15
+    gemini_embedding_model: str = "gemini-embedding-2"
+    embedding_dimensions: int = 768
 
     # Prompt enhancer
     clarification_threshold: float = 0.6

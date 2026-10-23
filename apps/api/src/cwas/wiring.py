@@ -20,7 +20,7 @@ from cwas.kb.store import InMemoryVectorStore
 from cwas.llm import LLM, AnthropicLLM
 from cwas.ollama_llm import OllamaLLM
 from cwas.runs import RunManager
-from cwas.tools.embed import Embedder, HashingEmbedder, VoyageEmbedder
+from cwas.tools.embed import Embedder, GeminiEmbedder, HashingEmbedder, VoyageEmbedder
 from cwas.tools.grammar import LanguageToolChecker
 from cwas.tools.scrape import InMemoryPageCache, Scraper
 from cwas.tools.search import DuckDuckGoSearch, SearchClient, TavilySearch
@@ -103,6 +103,21 @@ async def _build_llm(settings: Settings, http: httpx.AsyncClient, stack: AsyncEx
     return AnthropicLLM(client, settings.models())
 
 
+def _build_embedder(settings: Settings, http: httpx.AsyncClient) -> Embedder:
+    if settings.voyage_api_key is not None:
+        return VoyageEmbedder(http, settings.voyage_api_key.get_secret_value())
+    if settings.gemini_api_key is not None:
+        logger.info("using Gemini embeddings (%s)", settings.gemini_embedding_model)
+        return GeminiEmbedder(
+            http,
+            settings.gemini_api_key.get_secret_value(),
+            model=settings.gemini_embedding_model,
+            dimensions=settings.embedding_dimensions,
+        )
+    logger.warning("VOYAGE_API_KEY and GEMINI_API_KEY not set; using the offline hashing embedder")
+    return HashingEmbedder()
+
+
 @asynccontextmanager
 async def runtime(settings: Settings) -> AsyncIterator[RunManager]:
     async with httpx.AsyncClient() as http, AsyncExitStack() as stack:
@@ -115,17 +130,10 @@ async def runtime(settings: Settings) -> AsyncIterator[RunManager]:
             logger.warning("TAVILY_API_KEY not set; using free DuckDuckGo search")
             search = DuckDuckGoSearch()
 
-        embedder: Embedder
-        if settings.voyage_api_key is not None:
-            embedder = VoyageEmbedder(http, settings.voyage_api_key.get_secret_value())
-        else:
-            logger.warning("VOYAGE_API_KEY not set; using the offline hashing embedder")
-            embedder = HashingEmbedder()
-
         if settings.languagetool_url is None:
             logger.warning("LANGUAGETOOL_URL not set; grammar auto-correction disabled")
 
-        kb = KnowledgeBase(embedder, InMemoryVectorStore())
+        kb = KnowledgeBase(_build_embedder(settings, http), InMemoryVectorStore())
         deps = AgentDeps(
             llm=llm,
             search=search,

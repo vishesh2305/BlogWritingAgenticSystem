@@ -1,4 +1,4 @@
-"""Text embedders: Voyage AI for production, a hashing embedder for offline/dev runs."""
+"""Text embedders: Voyage AI or Gemini for production, a hashing embedder for offline/dev runs."""
 
 import hashlib
 import math
@@ -54,6 +54,65 @@ class VoyageEmbedder:
             raise EmbeddingError(f"Voyage embedding failed: {exc}") from exc
         data = sorted(response.json()["data"], key=lambda item: item["index"])
         return [item["embedding"] for item in data]
+
+
+class GeminiEmbedder:
+    """gemini-embedding-2 takes the task as a text prefix rather than a task-type field."""
+
+    _PREFIX: dict[InputType, str] = {
+        "document": "title: none | text: ",
+        "query": "task: search result | query: ",
+    }
+
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        api_key: str,
+        model: str = "gemini-embedding-2",
+        dimensions: int = 768,
+        batch_size: int = 100,
+        base_url: str = "https://generativelanguage.googleapis.com/v1beta",
+    ) -> None:
+        self._client = client
+        self._api_key = api_key
+        self._model = model
+        self._dimensions = dimensions
+        self._batch_size = batch_size
+        self._url = f"{base_url.rstrip('/')}/models/{model}:batchEmbedContents"
+
+    async def embed(self, texts: list[str], input_type: InputType) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            vectors.extend(
+                await self._embed_batch(texts[start : start + self._batch_size], input_type)
+            )
+        return vectors
+
+    async def _embed_batch(self, batch: list[str], input_type: InputType) -> list[list[float]]:
+        requests = [
+            {
+                "model": f"models/{self._model}",
+                "content": {"parts": [{"text": self._PREFIX[input_type] + text}]},
+                "outputDimensionality": self._dimensions,
+            }
+            for text in batch
+        ]
+        try:
+            response = await self._client.post(
+                self._url,
+                headers={"x-goog-api-key": self._api_key},
+                json={"requests": requests},
+                timeout=60.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise EmbeddingError(f"Gemini embedding failed: {exc}") from exc
+        embeddings = response.json().get("embeddings", [])
+        if len(embeddings) != len(batch):
+            raise EmbeddingError(
+                f"Gemini returned {len(embeddings)} vectors for {len(batch)} texts"
+            )
+        return [item["values"] for item in embeddings]
 
 
 _TOKEN = re.compile(r"\w+")
