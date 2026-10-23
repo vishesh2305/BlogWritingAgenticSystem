@@ -1,12 +1,17 @@
 import logging
+from contextlib import AsyncExitStack
 
 import httpx
 import pytest
 import respx
 
 from cwas.api.app import create_app
+from cwas.config import Settings
+from cwas.fallback_llm import FallbackLLM
+from cwas.gemini_llm import GeminiLLM
+from cwas.llm import LLM
 from cwas.runs import RunManager
-from cwas.wiring import ConfigError, runtime
+from cwas.wiring import ConfigError, _build_llm, runtime
 from tests.fakes import make_settings
 
 TAGS_URL = "http://localhost:11434/api/tags"
@@ -75,3 +80,69 @@ async def test_app_lifespan_wires_a_real_run_manager() -> None:
 
     async with app.router.lifespan_context(app):
         assert isinstance(app.state.runs, RunManager)
+
+
+async def build_llm(settings: Settings) -> LLM:
+    async with httpx.AsyncClient() as http, AsyncExitStack() as stack:
+        return await _build_llm(settings, http, stack)
+
+
+def test_gemini_and_groq_defaults_favour_fast_models() -> None:
+    settings = make_settings()
+    assert settings.gemini_models() == {
+        "opus": "gemini-3.8-flash",
+        "sonnet": "gemini-3.8-flash",
+        "haiku": "gemini-3.5-flash-lite",
+    }
+    assert settings.groq_models() == {
+        "opus": "openai/gpt-oss-120b",
+        "sonnet": "openai/gpt-oss-120b",
+        "haiku": "openai/gpt-oss-20b",
+    }
+
+
+async def test_gemini_runtime_requires_a_gemini_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(ConfigError, match="GEMINI_API_KEY"):
+        await build_llm(make_settings(llm_provider="gemini", groq_api_key="gsk-test"))
+
+
+async def test_gemini_with_groq_key_builds_a_fallback_chain() -> None:
+    llm = await build_llm(
+        make_settings(llm_provider="gemini", gemini_api_key="AIza-test", groq_api_key="gsk-test")
+    )
+
+    assert isinstance(llm, FallbackLLM)
+    assert llm.provider_names == ["gemini", "groq"]
+
+
+async def test_gemini_without_groq_key_runs_alone_and_warns(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    caplog.set_level(logging.WARNING)
+
+    llm = await build_llm(make_settings(llm_provider="gemini", gemini_api_key="AIza-test"))
+
+    assert isinstance(llm, GeminiLLM)
+    assert "GROQ_API_KEY" in caplog.text
+
+
+async def test_api_keys_never_reach_the_logs(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    await build_llm(
+        make_settings(llm_provider="gemini", gemini_api_key="AIza-secret", groq_api_key="gsk-secret")
+    )
+
+    assert "AIza-secret" not in caplog.text
+    assert "gsk-secret" not in caplog.text
+
+
+async def test_gemini_runtime_builds_without_network_calls() -> None:
+    settings = make_settings(
+        llm_provider="gemini", gemini_api_key="AIza-test", groq_api_key="gsk-test"
+    )
+
+    async with runtime(settings) as manager:
+        assert isinstance(manager, RunManager)
