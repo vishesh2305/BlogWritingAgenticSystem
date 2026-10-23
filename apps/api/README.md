@@ -1,11 +1,11 @@
 # CWAS API: backend for the content-writing multi-agent system
 
-FastAPI plus LangGraph. This is the **Phase 1 vertical slice** from [`Plan.md`](../../Plan.md): a prompt goes through five agents and comes back as a cited, grammar-checked article, with every step streamed live.
+FastAPI plus LangGraph. This is the **Phase 1 vertical slice** from [`Plan.md`](../../Plan.md): a prompt goes through six agents and comes back as a cited, humanized, grammar-checked article, with every step streamed live.
 
 ```
 prompt ─▶ 1 Prompt Enhancer ─(unclear?)─▶ ask user ─┐
               ▲─────────────────────────────────────┘
-          ─▶ 2 Web Research ─▶ 3 Knowledge Base ─▶ 5 Writer ─▶ 10 Grammar ─▶ article
+          ─▶ 2 Web Research ─▶ 3 Knowledge Base ─▶ 5 Writer ─▶ 7 Humanizer ─▶ 10 Grammar ─▶ article
 ```
 
 ## Run it (free: no API keys)
@@ -25,11 +25,27 @@ The server checks at startup that Ollama is running and the model is pulled, and
 
 | Setting | Free default | Paid upgrade |
 |---|---|---|
-| LLM | `LLM_PROVIDER=ollama` | `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` |
+| LLM | `LLM_PROVIDER=ollama` | `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` (+ `GROQ_API_KEY` fallback), or `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` |
 | Search | DuckDuckGo (rate-limited) | `TAVILY_API_KEY` |
 | Embeddings | local hashing embedder | `VOYAGE_API_KEY` |
 
 A local 8B model is slower and writes less polished prose than Claude. Expect a few minutes per article on an RTX 4060.
+
+### Fast hosted models: Gemini with Groq fallback
+
+```bash
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...   # https://aistudio.google.com/apikey
+GROQ_API_KEY=...     # optional fallback: https://console.groq.com/keys
+```
+
+Every call goes to Gemini first (`gemini-3.8-flash`, and `gemini-3.5-flash-lite` for the light tier). If Gemini rate-limits, errors, times out, blocks the request or returns bad JSON, the same call is retried on Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`). A rate-limited provider sits out its `Retry-After` window, then rejoins. Without `GROQ_API_KEY`, Gemini runs alone and the server logs a warning. Override models with `GEMINI_MODEL_OPUS|SONNET|HAIKU` and `GROQ_MODEL_OPUS|SONNET|HAIKU`.
+
+### AI-likeness score and the Humanizer
+
+The Humanizer (Agent 7) scores the draft from 0 to 100 for machine-typical style: stock phrases ("delve", "in today's fast-paced world"…), even sentence rhythm, formal transition openers, em dashes, bullet-heavy layout and missing contractions. It rewrites only the flagged paragraphs, rejects any rewrite that adds or drops a citation, and repeats until the score is below `AI_SCORE_THRESHOLD` (default 10) or `MAX_HUMANIZE_ROUNDS` (default 2) is used up. If the target is still missed, the article is delivered with a warning. The final score is in `GET /runs/{id}` as `ai_score`.
+
+This score is a local stand-in that tracks what detectors look for. It is **not** GPTZero, Originality.ai or Turnitin, and those tools disagree with each other, so a low score here doesn't guarantee a low score there.
 
 To turn on grammar auto-correction, start LanguageTool:
 
@@ -56,14 +72,14 @@ curl -X POST localhost:8000/runs/<run_id>/answer -H 'content-type: application/j
 |---|---|---|
 | GET | `/health` | Liveness |
 | POST | `/runs` | Start a run → `202 {run_id}` |
-| GET | `/runs/{id}` | `status` (`running` / `waiting_for_input` / `completed` / `failed`), `question`, `brief`, `article`, `warnings`, `error` |
+| GET | `/runs/{id}` | `status` (`running` / `waiting_for_input` / `completed` / `failed`), `question`, `brief`, `article`, `ai_score`, `warnings`, `error` |
 | GET | `/runs/{id}/stream` | SSE events: `run_started`, `agent_started`, `agent_finished`, `agent_failed`, `question`, `answer_received`, `done`, `error`. A late subscriber gets every earlier event replayed. |
 | POST | `/runs/{id}/answer` | Answer the clarifying question → `202`, or `409` if the run isn't waiting |
 
 ## Develop
 
 ```bash
-uv run pytest --cov          # 137 tests, coverage gate 80%
+uv run pytest --cov          # 213 tests, coverage gate 80%
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src              # strict
 ```
@@ -74,12 +90,13 @@ Tests never touch the network. HTTP is mocked with `respx`, and the agents run a
 
 ```
 src/cwas/
-  agents/      prompt_enhancer, researcher, kb_builder, writer, grammar, prompts, deps
+  agents/      prompt_enhancer, researcher, kb_builder, writer, humanizer, grammar, prompts, deps
   graph/       state (RunState), builder (orchestrator), events, finalize
-  tools/       search (Tavily / DuckDuckGo), scrape (robots + SSRF guard), embed (Voyage/hashing), grammar, url_safety
+  tools/       search (Tavily / DuckDuckGo), scrape (robots + SSRF guard), embed (Voyage/hashing), grammar, ai_score, url_safety
   kb/          chunker, store (vector store), knowledge_base
   api/app.py   FastAPI routes      runs.py  run lifecycle + event fan-out
   llm.py       LLM interface + Anthropic backend      ollama_llm.py  local Ollama backend
+  gemini_llm.py, groq_llm.py  hosted backends      fallback_llm.py  provider chain (Gemini → Groq)
   wiring.py    production dependency wiring      config.py  settings
 ```
 
