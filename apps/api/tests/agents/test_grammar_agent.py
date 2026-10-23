@@ -1,5 +1,6 @@
 from cwas.agents.grammar import grammar_agent
-from cwas.models import Citation, Draft
+from cwas.models import AIScore, Citation, Draft
+from cwas.tools.ai_score import ai_score
 from cwas.tools.grammar import GrammarError, GrammarMatch
 from tests.fakes import FakeGrammar, make_deps
 
@@ -45,3 +46,14 @@ async def test_without_checker_only_scores_readability() -> None:
     assert update["drafts"][0].markdown == "Short text here."
     assert update["drafts"][0].readability is not None
     assert update["warnings"] == []
+
+
+async def test_final_text_gets_a_fresh_ai_likeness_score() -> None:
+    stale = draft("This is teh plan [1].").model_copy(
+        update={"ai_score": AIScore(score=99.0, signals={})}
+    )
+    deps = make_deps(grammar=FakeGrammar(teh_fixer))
+
+    update = await grammar_agent({"drafts": [stale]}, deps)
+
+    assert update["drafts"][0].ai_score == ai_score("This is the plan [1].")

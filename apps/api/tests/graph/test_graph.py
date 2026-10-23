@@ -53,7 +53,14 @@ async def test_happy_path_produces_cited_article_and_agent_events() -> None:
     assert "https://facts.org/a" in state["final_article"]
 
     finished = [e["agent"] for e in events if e["type"] == "agent_finished"]
-    assert finished == ["prompt_enhancer", "researcher", "kb_builder", "writer", "grammar"]
+    assert finished == [
+        "prompt_enhancer",
+        "researcher",
+        "kb_builder",
+        "writer",
+        "humanizer",
+        "grammar",
+    ]
     started = [e["agent"] for e in events if e["type"] == "agent_started"]
     assert started == finished
     assert all(e["duration_ms"] >= 0 for e in events if e["type"] == "agent_finished")
