@@ -71,8 +71,32 @@ class Citation(BaseModel):
     title: str
 
 
+class AIScore(BaseModel):
+    """0-100 estimate of how machine-written the text reads; lower is more human."""
+
+    score: float
+    signals: dict[str, float] = Field(description="Points contributed by each signal")
+
+
+class FlaggedParagraph(BaseModel):
+    index: int = Field(description="Position of the block in the article")
+    reasons: list[str]
+
+
+class RewrittenParagraph(BaseModel):
+    index: int
+    text: str
+
+
+class Rewrite(BaseModel):
+    """Output of the Humanizer: new text for some of the flagged paragraphs."""
+
+    paragraphs: list[RewrittenParagraph]
+
+
 class Draft(BaseModel):
     variant_id: str
     markdown: str
     citations: list[Citation] = Field(default_factory=list)
     readability: Readability | None = None
+    ai_score: AIScore | None = None

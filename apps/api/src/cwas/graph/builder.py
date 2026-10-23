@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from cwas.agents.deps import AgentDeps
 from cwas.agents.grammar import grammar_agent
+from cwas.agents.humanizer import humanizer
 from cwas.agents.kb_builder import kb_builder
 from cwas.agents.prompt_enhancer import clarify, needs_clarification, prompt_enhancer
 from cwas.agents.researcher import researcher
@@ -24,6 +25,7 @@ PIPELINE: list[tuple[str, AgentFn]] = [
     ("researcher", researcher),
     ("kb_builder", kb_builder),
     ("writer", writer),
+    ("humanizer", humanizer),
     ("grammar", grammar_agent),
 ]
 

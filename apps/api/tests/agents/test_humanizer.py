@@ -3,7 +3,7 @@ from typing import Any
 from cwas.agents import prompts
 from cwas.agents.humanizer import humanizer
 from cwas.llm import LLMError
-from cwas.models import Citation, Draft, RewrittenParagraph, Rewrite
+from cwas.models import Citation, Draft, Rewrite, RewrittenParagraph
 from cwas.tools.ai_score import ai_score
 from tests.fakes import FakeLLM, make_brief, make_deps
 from tests.samples import AI_PARAGRAPH, HUMAN_PARAGRAPH

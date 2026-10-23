@@ -112,7 +112,14 @@ async def test_stream_replays_and_ends_with_done(client: httpx.AsyncClient) -> N
     assert types[0] == "run_started"
     assert types[-1] == "done"
     finished = [e["agent"] for e in events if e["type"] == "agent_finished"]
-    assert finished == ["prompt_enhancer", "researcher", "kb_builder", "writer", "grammar"]
+    assert finished == [
+        "prompt_enhancer",
+        "researcher",
+        "kb_builder",
+        "writer",
+        "humanizer",
+        "grammar",
+    ]
     assert [e["seq"] for e in events] == list(range(len(events)))
 
 

@@ -35,6 +35,7 @@ class RunView(BaseModel):
     question: str | None
     article: str | None
     brief: dict[str, Any] | None
+    ai_score: dict[str, Any] | None
     warnings: list[str]
     error: str | None
 
@@ -84,6 +85,7 @@ def create_app(manager: RunManager | None = None, settings: Settings | None = No
             question=run.question,
             article=run.article,
             brief=run.brief,
+            ai_score=run.ai_score,
             warnings=run.warnings,
             error=run.error,
         )

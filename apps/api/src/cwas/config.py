@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Writer
     retrieval_k: int = 12
 
+    # Humanizer: rewrite until the AI-likeness score (0-100) is below the threshold
+    ai_score_threshold: float = 10.0
+    max_humanize_rounds: int = 2
+
     def models(self) -> dict[Tier, str]:
         return {"opus": self.model_opus, "sonnet": self.model_sonnet, "haiku": self.model_haiku}
 

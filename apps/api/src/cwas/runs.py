@@ -31,6 +31,7 @@ class Run:
     question: str | None = None
     article: str | None = None
     brief: dict[str, Any] | None = None
+    ai_score: dict[str, Any] | None = None
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -103,6 +104,8 @@ class RunManager:
             state = (await self._graph.aget_state(config)).values
             run.article = state["final_article"]
             run.brief = state["brief"].model_dump()
+            delivered = state["drafts"][0].ai_score
+            run.ai_score = delivered.model_dump() if delivered else None
             run.warnings = state.get("warnings", [])
             run.status = "completed"
             await run.publish({"type": "done"})
