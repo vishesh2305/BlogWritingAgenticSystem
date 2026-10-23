@@ -70,3 +70,20 @@ def test_caps_facts_per_page() -> None:
 
     assert [f.source_url for f in facts].count("https://a.com") == 4
     assert [f.id for f in facts] == [f"f{i}" for i in range(1, 8)]
+
+
+def test_skips_list_introductions_and_year_only_sentences() -> None:
+    # Both came from a live run: neither is a statistic anyone could cite.
+    text = (
+        "This guide breaks down everything you need to know, with realistic numbers for 2026. "
+        "In 2026, rooftop solar costs approximately:\n"
+        "- 45,000 to 60,000 rupees per kW before the subsidy is applied.\n"
+        "In 2024 India added 15 GW of rooftop and utility solar capacity."
+    )
+
+    facts = extract_facts([page("https://a.com", text)])
+
+    assert [f.text for f in facts] == [
+        "45,000 to 60,000 rupees per kW before the subsidy is applied.",
+        "In 2024 India added 15 GW of rooftop and utility solar capacity.",
+    ]

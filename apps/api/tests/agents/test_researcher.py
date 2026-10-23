@@ -80,3 +80,15 @@ async def test_falls_back_to_topic_when_brief_has_no_queries() -> None:
     await researcher({"brief": brief}, make_deps(search=search, scraper=scraper))
 
     assert "heat pumps" in search.queries
+
+
+async def test_warns_when_no_competitor_page_could_be_collected() -> None:
+    # Live run: the keyword search found nothing usable, and the run went on silently.
+    search = FakeSearch({"how do solar panels work": ["https://facts.org/a"]})
+    scraper = FakeScraper({"https://facts.org/a": "Panels convert sunlight."})
+    deps = make_deps(search=search, scraper=scraper)
+
+    update = await researcher({"brief": make_brief()}, deps)
+
+    assert [p.source_type for p in update["sources"]] == ["source"]
+    assert any("competitor" in w for w in update["warnings"])
