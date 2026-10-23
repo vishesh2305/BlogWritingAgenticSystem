@@ -5,7 +5,7 @@ import httpx
 import pytest
 import respx
 
-from cwas.tools.embed import EmbeddingError, HashingEmbedder, VoyageEmbedder
+from cwas.tools.embed import EmbeddingError, GeminiEmbedder, HashingEmbedder, VoyageEmbedder
 
 VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
 
@@ -78,3 +78,80 @@ async def test_hashing_embedder_ranks_overlapping_text_closer() -> None:
 async def test_hashing_embedder_handles_empty_text() -> None:
     [v] = await HashingEmbedder(dimensions=8).embed([""], "query")
     assert v == [0.0] * 8
+
+
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents"
+)
+
+
+def gemini_reply(request: httpx.Request) -> httpx.Response:
+    texts = [r["content"]["parts"][0]["text"] for r in json.loads(request.content)["requests"]]
+    return httpx.Response(200, json={"embeddings": [{"values": [float(len(t))]} for t in texts]})
+
+
+@respx.mock
+async def test_gemini_embeds_documents_with_a_title_prefix_and_key_header() -> None:
+    route = respx.post(GEMINI_URL).mock(side_effect=gemini_reply)
+    async with httpx.AsyncClient() as client:
+        vectors = await GeminiEmbedder(client, api_key="AIza-k").embed(["ab", "c"], "document")
+
+    request = route.calls.last.request
+    assert request.headers["x-goog-api-key"] == "AIza-k"
+    assert "AIza-k" not in str(request.url)
+    [first, _] = json.loads(request.content)["requests"]
+    assert first == {
+        "model": "models/gemini-embedding-2",
+        "content": {"parts": [{"text": "title: none | text: ab"}]},
+        "outputDimensionality": 768,
+    }
+    assert vectors == [
+        [float(len("title: none | text: ab"))],
+        [float(len("title: none | text: c"))],
+    ]
+
+
+@respx.mock
+async def test_gemini_embeds_queries_with_a_search_prefix() -> None:
+    route = respx.post(GEMINI_URL).mock(side_effect=gemini_reply)
+    async with httpx.AsyncClient() as client:
+        await GeminiEmbedder(client, api_key="k", dimensions=1536).embed(["solar cost"], "query")
+
+    [request] = json.loads(route.calls.last.request.content)["requests"]
+    assert request["content"]["parts"][0]["text"] == "task: search result | query: solar cost"
+    assert request["outputDimensionality"] == 1536
+
+
+@respx.mock
+async def test_gemini_splits_large_inputs_into_batches() -> None:
+    route = respx.post(GEMINI_URL).mock(side_effect=gemini_reply)
+    async with httpx.AsyncClient() as client:
+        vectors = await GeminiEmbedder(client, api_key="k", batch_size=2).embed(
+            [f"t{i}" for i in range(5)], "document"
+        )
+
+    assert route.call_count == 3
+    assert len(vectors) == 5
+
+
+async def test_gemini_empty_input_makes_no_request() -> None:
+    async with httpx.AsyncClient() as client:
+        assert await GeminiEmbedder(client, api_key="k").embed([], "query") == []
+
+
+@respx.mock
+async def test_gemini_http_error_raises_embedding_error_without_the_key() -> None:
+    respx.post(GEMINI_URL).mock(return_value=httpx.Response(429, json={"error": "quota"}))
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(EmbeddingError, match="Gemini") as caught:
+            await GeminiEmbedder(client, api_key="AIza-secret").embed(["a"], "query")
+
+    assert "AIza-secret" not in str(caught.value)
+
+
+@respx.mock
+async def test_gemini_wrong_vector_count_raises_embedding_error() -> None:
+    respx.post(GEMINI_URL).mock(return_value=httpx.Response(200, json={"embeddings": []}))
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(EmbeddingError, match="1 texts"):
+            await GeminiEmbedder(client, api_key="k").embed(["a"], "query")

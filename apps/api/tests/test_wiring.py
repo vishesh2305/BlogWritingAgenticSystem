@@ -11,7 +11,8 @@ from cwas.fallback_llm import FallbackLLM
 from cwas.gemini_llm import GeminiLLM
 from cwas.llm import LLM
 from cwas.runs import RunManager
-from cwas.wiring import ConfigError, _build_llm, runtime
+from cwas.tools.embed import GeminiEmbedder, HashingEmbedder, VoyageEmbedder
+from cwas.wiring import ConfigError, _build_embedder, _build_llm, runtime
 from tests.fakes import make_settings
 
 TAGS_URL = "http://localhost:11434/api/tags"
@@ -148,3 +149,23 @@ async def test_gemini_runtime_builds_without_network_calls() -> None:
 
     async with runtime(settings) as manager:
         assert isinstance(manager, RunManager)
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [
+        ({"voyage_api_key": "pa-k", "gemini_api_key": "AIza-k"}, VoyageEmbedder),
+        ({"gemini_api_key": "AIza-k"}, GeminiEmbedder),
+        ({}, HashingEmbedder),
+    ],
+)
+async def test_embedder_prefers_voyage_then_gemini_then_offline_hashing(
+    keys: dict[str, str], expected: type, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("VOYAGE_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+    async with httpx.AsyncClient() as http:
+        embedder = _build_embedder(make_settings(**keys), http)
+
+    assert isinstance(embedder, expected)
