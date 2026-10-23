@@ -185,3 +185,55 @@ async def test_fetch_returns_none_when_no_article_text_extracted() -> None:
 
     async with httpx.AsyncClient() as client:
         assert await Scraper(client, url_guard=allow_all).fetch("https://empty.com/a") is None
+
+
+SEO_HTML = """
+<html><head>
+<title>Solar Cost Guide</title>
+<meta name="description" content="What a home solar system costs in India, with subsidies.">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article"}</script>
+<script type="application/ld+json">
+{"@graph": [{"@type": ["FAQPage"]}, {"@type": "BreadcrumbList"}, {"@type": "Article"}]}
+</script>
+<script type="application/ld+json">{not valid json</script>
+</head>
+<body><article>
+<h1>Solar Cost Guide</h1>
+<p>Home solar has become far cheaper over the last decade, and the government now pays part
+of the bill for most households that install a rooftop system with net metering.</p>
+<h2>How much does a 3 kW system cost?</h2>
+<p>A 3 kW rooftop system costs about 1.5 lakh rupees before the subsidy is applied, and most
+installers quote a payback period of four to six years for an average family home.</p>
+<h3>Subsidy</h3>
+<p>The PM Surya Ghar scheme pays up to 78,000 rupees for systems of 3 kW or more, credited to
+the bank account of the homeowner after the installation passes inspection.</p>
+</article></body></html>
+"""
+
+
+@respx.mock
+async def test_fetch_keeps_headings_and_captures_seo_metadata() -> None:
+    respx.get("https://rival.com/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://rival.com/cost").mock(return_value=html(SEO_HTML))
+
+    async with httpx.AsyncClient() as client:
+        page = await Scraper(client, url_guard=allow_all).fetch("https://rival.com/cost")
+
+    assert page is not None
+    assert "## How much does a 3 kW system cost?" in page.text
+    assert "### Subsidy" in page.text
+    assert page.description == "What a home solar system costs in India, with subsidies."
+    assert page.schema_types == ["Article", "BreadcrumbList", "FAQPage"]
+
+
+@respx.mock
+async def test_pages_without_metadata_get_empty_defaults() -> None:
+    respx.get("https://solar.com/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://solar.com/guide").mock(return_value=html())
+
+    async with httpx.AsyncClient() as client:
+        page = await Scraper(client, url_guard=allow_all).fetch("https://solar.com/guide")
+
+    assert page is not None
+    assert page.description == ""
+    assert page.schema_types == []
