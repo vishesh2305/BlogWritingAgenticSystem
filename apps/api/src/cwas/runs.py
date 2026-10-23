@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from langgraph.types import Command
 
+from cwas.usage import UsageMeter, metering
+
 logger = logging.getLogger(__name__)
 
 RunStatus = Literal["running", "waiting_for_input", "completed", "failed"]
@@ -32,6 +34,7 @@ class Run:
     article: str | None = None
     brief: dict[str, Any] | None = None
     ai_score: dict[str, Any] | None = None
+    meter: UsageMeter = field(default_factory=UsageMeter, repr=False)
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -88,6 +91,10 @@ class RunManager:
         task.add_done_callback(self._tasks.discard)
 
     async def _drive(self, run: Run, payload: Any) -> None:
+        with metering(run.meter):
+            await self._drive_metered(run, payload)
+
+    async def _drive_metered(self, run: Run, payload: Any) -> None:
         config = {"configurable": {"thread_id": run.id}}
         try:
             async for mode, chunk in self._graph.astream(

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from cwas.config import Tier
 from cwas.llm import Effort, LLMError, raise_for_http_status
+from cwas.usage import record_usage
 
 _REASONING_EFFORT: dict[Effort, str] = {
     "low": "low",
@@ -120,7 +121,10 @@ class GroqLLM:
                 raise _SchemaRejected(error.get("message", ""), error.get("failed_generation", ""))
         raise_for_http_status("Groq", response)
 
-        choice = response.json()["choices"][0]
+        data = response.json()
+        usage = data.get("usage") or {}
+        record_usage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+        choice = data["choices"][0]
         if choice.get("finish_reason") == "length":
             raise LLMError("output truncated (finish_reason=length)")
         return str(choice["message"].get("content") or "").strip()

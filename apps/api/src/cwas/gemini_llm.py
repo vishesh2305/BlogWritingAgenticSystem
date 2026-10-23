@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from cwas.config import Tier
 from cwas.llm import Effort, LLMError, LLMRefusalError, raise_for_http_status
+from cwas.usage import record_usage
 
 # Speed first: each effort level thinks one notch less than its name suggests.
 _THINKING_LEVEL: dict[Effort, str] = {
@@ -107,6 +108,11 @@ class GeminiLLM:
         raise_for_http_status("Gemini", response)
 
         data = response.json()
+        usage = data.get("usageMetadata", {})
+        record_usage(
+            usage.get("promptTokenCount", 0),
+            usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0),
+        )
         block_reason = data.get("promptFeedback", {}).get("blockReason")
         if block_reason:
             raise LLMRefusalError(f"Gemini blocked the prompt (reason: {block_reason})")

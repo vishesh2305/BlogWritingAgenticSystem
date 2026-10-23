@@ -85,6 +85,12 @@ class Citation(BaseModel):
     title: str
 
 
+class Usage(BaseModel):
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class AIScore(BaseModel):
     """0-100 estimate of how machine-written the text reads; lower is more human."""
 

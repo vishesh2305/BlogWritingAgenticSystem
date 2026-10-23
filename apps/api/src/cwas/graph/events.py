@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from langgraph.config import get_stream_writer
 
 from cwas.graph.state import RunState
+from cwas.usage import agent_scope, current_meter
 
 
 class Node(Protocol):
@@ -19,8 +20,10 @@ def instrument(agent: str, fn: Node) -> Node:
         emit = get_stream_writer()
         emit({"type": "agent_started", "agent": agent})
         started = perf_counter()
+        tokens_before = _agent_tokens(agent)
         try:
-            update = await fn(state)
+            with agent_scope(agent):
+                update = await fn(state)
         except Exception as exc:
             emit({"type": "agent_failed", "agent": agent, "error": str(exc)})
             raise
@@ -29,8 +32,15 @@ def instrument(agent: str, fn: Node) -> Node:
                 "type": "agent_finished",
                 "agent": agent,
                 "duration_ms": round((perf_counter() - started) * 1000),
+                "tokens": _agent_tokens(agent) - tokens_before,
             }
         )
         return update
 
     return node
+
+
+def _agent_tokens(agent: str) -> int:
+    meter = current_meter()
+    usage = meter.by_agent.get(agent) if meter else None
+    return usage.input_tokens + usage.output_tokens if usage else 0

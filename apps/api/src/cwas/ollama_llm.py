@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 
 from cwas.config import Tier
 from cwas.llm import Effort, LLMError
+from cwas.usage import record_usage
 
 # Reasoning models sometimes inline their chain of thought; it must not reach the article.
 _INLINE_THINKING = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
@@ -95,6 +96,7 @@ class OllamaLLM:
             raise LLMError(f"Ollama returned HTTP {response.status_code}: {response.text}")
 
         data = response.json()
+        record_usage(data.get("prompt_eval_count", 0), data.get("eval_count", 0))
         if data.get("done_reason") == "length":
             raise LLMError("output truncated (done_reason=length); raise OLLAMA_NUM_CTX")
         return _INLINE_THINKING.sub("", data["message"]["content"]).strip()

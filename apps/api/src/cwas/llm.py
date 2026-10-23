@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel
 
 from cwas.config import Tier
+from cwas.usage import record_usage
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
@@ -58,6 +59,11 @@ class LLM(Protocol):
     ) -> str: ...
 
 
+def _record_usage(response: Any) -> None:
+    usage = getattr(response, "usage", None)
+    record_usage(getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0))
+
+
 def _raise_for_stop(response: Any) -> None:
     if response.stop_reason == "refusal":
         details = response.stop_details
@@ -93,6 +99,7 @@ class AnthropicLLM:
         response = await self._client.beta.messages.parse(
             **self._request(tier, system, prompt, effort, 16000), output_format=schema
         )
+        _record_usage(response)
         _raise_for_stop(response)
         parsed = response.parsed_output
         if parsed is None:
@@ -111,5 +118,6 @@ class AnthropicLLM:
         response = await self._client.beta.messages.create(
             **self._request(tier, system, prompt, effort, max_tokens)
         )
+        _record_usage(response)
         _raise_for_stop(response)
         return "".join(block.text for block in response.content if block.type == "text")
