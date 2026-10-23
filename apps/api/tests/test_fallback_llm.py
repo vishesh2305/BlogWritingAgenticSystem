@@ -184,3 +184,16 @@ async def test_rate_limit_retry_happens_only_once() -> None:
     with pytest.raises(LLMError, match="every LLM provider failed"):
         await llm.text(tier="opus", system="s", prompt="p")
     assert clock.sleeps == [2.0]
+
+
+async def test_does_not_wait_out_a_long_rate_limit_such_as_an_exhausted_daily_quota() -> None:
+    clock = Clock()
+    llm = chain(
+        ScriptedLLM(error=LLMRateLimitError("quota", 3600.0)),
+        ScriptedLLM(error=LLMRateLimitError("quota", 120.0)),
+        clock,
+    )
+
+    with pytest.raises(LLMError, match="every LLM provider failed"):
+        await llm.text(tier="opus", system="s", prompt="p")
+    assert clock.sleeps == []
