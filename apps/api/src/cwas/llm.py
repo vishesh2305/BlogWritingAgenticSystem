@@ -22,6 +22,26 @@ class LLMRefusalError(LLMError):
     pass
 
 
+class LLMRateLimitError(LLMError):
+    def __init__(self, message: str, retry_after: float | None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def raise_for_http_status(provider: str, response: Any) -> None:
+    """Map an HTTP error from a hosted provider (an httpx.Response) to an LLMError."""
+    if not response.is_error:
+        return
+    message = f"{provider} returned HTTP {response.status_code}: {response.text[:500]}"
+    if response.status_code == 429:
+        try:
+            retry_after: float | None = float(response.headers.get("retry-after", ""))
+        except ValueError:
+            retry_after = None
+        raise LLMRateLimitError(message, retry_after)
+    raise LLMError(message)
+
+
 class LLM(Protocol):
     async def structured[T: BaseModel](
         self, *, tier: Tier, system: str, prompt: str, schema: type[T], effort: Effort = "medium"

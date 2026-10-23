@@ -26,7 +26,9 @@ def reply(*texts: str, finish: str = "STOP", thought: str | None = None) -> http
     parts += [{"text": t} for t in texts]
     return httpx.Response(
         200,
-        json={"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": finish}]},
+        json={
+            "candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": finish}]
+        },
     )
 
 
@@ -89,9 +91,11 @@ async def test_effort_maps_to_a_speed_biased_thinking_level() -> None:
     async with httpx.AsyncClient() as client:
         llm = make_llm(client)
         for effort in ("low", "medium", "high", "max"):
-            await llm.text(tier="opus", system="s", prompt="p", effort=effort)  # type: ignore[arg-type]
+            await llm.text(tier="opus", system="s", prompt="p", effort=effort)
 
-    levels = [sent(route, i)["generationConfig"]["thinkingConfig"]["thinkingLevel"] for i in range(4)]
+    levels = [
+        sent(route, i)["generationConfig"]["thinkingConfig"]["thinkingLevel"] for i in range(4)
+    ]
     assert levels == ["low", "low", "medium", "high"]
 
 

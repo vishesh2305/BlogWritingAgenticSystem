@@ -132,7 +132,9 @@ async def test_api_keys_never_reach_the_logs(caplog: pytest.LogCaptureFixture) -
     caplog.set_level(logging.DEBUG)
 
     await build_llm(
-        make_settings(llm_provider="gemini", gemini_api_key="AIza-secret", groq_api_key="gsk-secret")
+        make_settings(
+            llm_provider="gemini", gemini_api_key="AIza-secret", groq_api_key="gsk-secret"
+        )
     )
 
     assert "AIza-secret" not in caplog.text

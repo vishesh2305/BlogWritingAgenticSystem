@@ -11,7 +11,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from cwas.agents.deps import AgentDeps
 from cwas.config import Settings
+from cwas.fallback_llm import FallbackLLM
+from cwas.gemini_llm import GeminiLLM
 from cwas.graph.builder import build_graph
+from cwas.groq_llm import GroqLLM
 from cwas.kb.knowledge_base import KnowledgeBase
 from cwas.kb.store import InMemoryVectorStore
 from cwas.llm import LLM, AnthropicLLM
@@ -50,6 +53,32 @@ async def _check_ollama_model(http: httpx.AsyncClient, settings: Settings) -> No
         )
 
 
+def _build_gemini(settings: Settings, http: httpx.AsyncClient) -> LLM:
+    if settings.gemini_api_key is None:
+        raise ConfigError(
+            "GEMINI_API_KEY is required when LLM_PROVIDER=gemini "
+            "(or set LLM_PROVIDER=ollama to use a free local model)"
+        )
+    gemini = GeminiLLM(
+        http,
+        api_key=settings.gemini_api_key.get_secret_value(),
+        models=settings.gemini_models(),
+        timeout=settings.hosted_llm_timeout,
+    )
+    if settings.groq_api_key is None:
+        logger.warning("GROQ_API_KEY not set; Gemini runs without a fallback")
+        return gemini
+
+    groq = GroqLLM(
+        http,
+        api_key=settings.groq_api_key.get_secret_value(),
+        models=settings.groq_models(),
+        timeout=settings.hosted_llm_timeout,
+    )
+    logger.info("using Gemini %s with Groq fallback", settings.gemini_model_opus)
+    return FallbackLLM([("gemini", gemini), ("groq", groq)])
+
+
 async def _build_llm(settings: Settings, http: httpx.AsyncClient, stack: AsyncExitStack) -> LLM:
     if settings.llm_provider == "ollama":
         await _check_ollama_model(http, settings)
@@ -61,6 +90,9 @@ async def _build_llm(settings: Settings, http: httpx.AsyncClient, stack: AsyncEx
             num_ctx=settings.ollama_num_ctx,
             timeout=settings.ollama_timeout,
         )
+
+    if settings.llm_provider == "gemini":
+        return _build_gemini(settings, http)
 
     if not any(os.environ.get(name) for name in _ANTHROPIC_CREDENTIAL_VARS):
         raise ConfigError(
