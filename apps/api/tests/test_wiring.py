@@ -10,6 +10,7 @@ from cwas.config import Settings
 from cwas.fallback_llm import FallbackLLM
 from cwas.gemini_llm import GeminiLLM
 from cwas.llm import LLM
+from cwas.throttled_llm import ThrottledLLM
 from cwas.runs import RunManager
 from cwas.tools.embed import GeminiEmbedder, HashingEmbedder, VoyageEmbedder
 from cwas.wiring import ConfigError, _build_embedder, _build_llm, runtime
@@ -125,7 +126,8 @@ async def test_gemini_without_groq_key_runs_alone_and_warns(
 
     llm = await build_llm(make_settings(llm_provider="gemini", gemini_api_key="AIza-test"))
 
-    assert isinstance(llm, GeminiLLM)
+    assert isinstance(llm, ThrottledLLM)
+    assert isinstance(llm.inner, GeminiLLM)
     assert "GROQ_API_KEY" in caplog.text
 
 

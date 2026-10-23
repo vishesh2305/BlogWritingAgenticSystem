@@ -205,3 +205,32 @@ async def test_em_dashes_in_prose_are_replaced_without_an_llm_call() -> None:
     assert "3–5 years [1], and the inverter, the part that fails, was replaced." in draft.markdown
     assert draft.ai_score is not None
     assert draft.ai_score.score < 10
+
+
+async def test_rewrite_that_adds_a_number_is_rejected() -> None:
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED + " About 40% of homes qualify.")]})
+
+    update = await humanizer(state(MIXED), make_deps(llm=llm, max_humanize_rounds=1))
+
+    assert update["drafts"][0].markdown == MIXED
+    assert any("40" in w for w in update["warnings"])
+
+
+async def test_rewrite_that_drops_the_primary_keyword_is_rejected() -> None:
+    with_keyword = MIXED.replace("solar panels convert", "home solar panels convert")
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
+
+    update = await humanizer(state(with_keyword), make_deps(llm=llm, max_humanize_rounds=1))
+
+    assert update["drafts"][0].markdown == with_keyword
+    assert any("keyword" in w for w in update["warnings"])
+
+
+async def test_rewrite_that_keeps_the_primary_keyword_is_accepted() -> None:
+    with_keyword = MIXED.replace("solar panels convert", "home solar panels convert")
+    kept = FIXED.replace("Panels turn", "Home solar panels turn")
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, kept)]})
+
+    update = await humanizer(state(with_keyword), make_deps(llm=llm))
+
+    assert update["drafts"][0].markdown.endswith(kept)

@@ -36,15 +36,22 @@ class ScriptedLLM:
 class Clock:
     def __init__(self) -> None:
         self.now = 1000.0
+        self.sleeps: list[float] = []
 
     def __call__(self) -> float:
         return self.now
 
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
 
 def chain(primary: ScriptedLLM, fallback: ScriptedLLM, clock: Clock | None = None) -> FallbackLLM:
+    clock = clock or Clock()
     return FallbackLLM(
         [("gemini", primary), ("groq", fallback)],  # type: ignore[list-item]
-        clock=clock or Clock(),
+        clock=clock,
+        sleep=clock.sleep,
         default_cooldown=30.0,
     )
 
@@ -139,3 +146,41 @@ async def test_non_llm_errors_are_not_swallowed() -> None:
 def test_needs_at_least_one_provider() -> None:
     with pytest.raises(ValueError, match="provider"):
         FallbackLLM([])
+
+
+class RecoveringLLM(ScriptedLLM):
+    """Rate-limited until the clock reaches `ready_at`."""
+
+    def __init__(self, clock: Clock, ready_at: float, retry_after: float) -> None:
+        super().__init__("recovered")
+        self.clock, self.ready_at, self.retry_after = clock, ready_at, retry_after
+
+    async def text(self, **kwargs: Any) -> str:
+        limited = self.clock.now < self.ready_at
+        self.error = LLMRateLimitError("429", self.retry_after) if limited else None
+        return await super().text(**kwargs)
+
+
+async def test_when_every_provider_is_rate_limited_it_waits_for_the_soonest_and_retries() -> None:
+    clock = Clock()
+    llm = chain(
+        RecoveringLLM(clock, ready_at=1007, retry_after=7.0),
+        RecoveringLLM(clock, ready_at=1003, retry_after=3.0),
+        clock,
+    )
+
+    assert await llm.text(tier="opus", system="s", prompt="p") == "recovered"
+    assert clock.sleeps == [3.0]
+
+
+async def test_rate_limit_retry_happens_only_once() -> None:
+    clock = Clock()
+    llm = chain(
+        ScriptedLLM(error=LLMRateLimitError("429", 2.0)),
+        ScriptedLLM(error=LLMRateLimitError("429", 4.0)),
+        clock,
+    )
+
+    with pytest.raises(LLMError, match="every LLM provider failed"):
+        await llm.text(tier="opus", system="s", prompt="p")
+    assert clock.sleeps == [2.0]
