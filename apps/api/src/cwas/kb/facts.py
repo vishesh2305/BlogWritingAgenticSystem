@@ -12,6 +12,7 @@ _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"“(])")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _WORD = re.compile(r"\w+")
+_YEAR = re.compile(r"(?:19|20)\d\d")
 MIN_WORDS = 6
 MAX_WORDS = 60
 
@@ -54,6 +55,13 @@ def _sentences(markdown: str) -> list[str]:
         line = _LIST_ITEM.sub("", line).replace("**", "").replace("__", "")
         for sentence in _SENTENCE_BREAK.split(line):
             sentence = sentence.strip()
-            if _NUMBER.search(sentence) and MIN_WORDS <= len(_WORD.findall(sentence)) <= MAX_WORDS:
+            if _is_fact(sentence):
                 found.append(sentence)
     return found
+
+
+def _is_fact(sentence: str) -> bool:
+    """A complete sentence of sensible length with at least one number that isn't just a year."""
+    if sentence.endswith(":") or not MIN_WORDS <= len(_WORD.findall(sentence)) <= MAX_WORDS:
+        return False
+    return any(not _YEAR.fullmatch(n) for n in numbers_in(sentence))

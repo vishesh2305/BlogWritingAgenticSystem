@@ -52,4 +52,9 @@ async def researcher(state: RunState, deps: AgentDeps) -> dict[str, Any]:
     pages = [page for page in fetched if page is not None]
     if not pages:
         raise ResearchError(f"no web pages could be collected for {brief.topic!r}")
+    if not any(page.source_type == "competitor" for page in pages):
+        warnings.append(
+            f"no competitor page could be collected for {brief.primary_keyword!r}; "
+            "the article can't be compared with the blogs that rank for it"
+        )
     return {"sources": pages, "warnings": warnings}
