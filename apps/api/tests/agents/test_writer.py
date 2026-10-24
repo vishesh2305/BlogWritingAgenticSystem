@@ -86,6 +86,10 @@ async def test_raises_when_knowledge_base_is_empty() -> None:
         ("Cheap [Source 2].", "Cheap [2]."),
         ("Cheap [1, 2].", "Cheap [1][2]."),
         ("Cheap [n1, n9].", "Cheap [1]."),
+        # gpt-oss (the Groq fallback) cites in its own format; seen in a live run.
+        ("Cheap【1†source】. Durable【2†L5-L9】.", "Cheap [1]. Durable [2]."),
+        ("Cheap【1†source】【2†source】.", "Cheap [1][2]."),
+        ("Cheap【source】. Durable【9†source】.", "Cheap. Durable."),
     ],
 )
 async def test_citation_variants_from_small_models_are_normalised(raw: str, expected: str) -> None:
