@@ -55,7 +55,8 @@ def raise_for_http_status(provider: str, response: Any) -> None:
     if not response.is_error:
         return
     message = f"{provider} returned HTTP {response.status_code}: {response.text[:500]}"
-    if response.status_code == 429:
+    # 503 means the model is overloaded ("high demand"): as temporary as a rate limit.
+    if response.status_code in (429, 503):
         raise LLMRateLimitError(message, retry_after_seconds(response))
     raise LLMError(message)
 

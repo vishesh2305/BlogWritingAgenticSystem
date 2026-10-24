@@ -104,8 +104,13 @@ def ai_score(text: str) -> AIScore:
     return AIScore(score=round(min(100.0, sum(signals.values())), 1), signals=signals)
 
 
-def flag_paragraphs(text: str) -> list[FlaggedParagraph]:
-    """Prose paragraphs that show machine-typical patterns on their own, with reasons."""
+def flag_paragraphs(
+    text: str, rhythm_variation: float = 0.3, rhythm_min_sentences: int = 4
+) -> list[FlaggedParagraph]:
+    """Prose paragraphs that show machine-typical patterns on their own, with reasons.
+
+    A paragraph's rhythm is too even when it has at least `rhythm_min_sentences` sentences
+    whose length variation is below `rhythm_variation`."""
     flagged: list[FlaggedParagraph] = []
     for index, block in enumerate(split_blocks(text)):
         if not is_prose(block):
@@ -119,7 +124,7 @@ def flag_paragraphs(text: str) -> list[FlaggedParagraph]:
         if len(openers) >= 2:
             reasons.append("formal transition openers: " + ", ".join(openers))
         lengths = stats.lengths
-        if len(lengths) >= 4 and _variation(lengths) < 0.3:
+        if len(lengths) >= rhythm_min_sentences and _variation(lengths) < rhythm_variation:
             reasons.append(f"sentence lengths too even (variation {_variation(lengths):.2f})")
         dashes = _dash_count(stats.prose)
         if dashes >= 2:

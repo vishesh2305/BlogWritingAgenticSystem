@@ -92,7 +92,11 @@ async def _humanize(
 
 
 def _targets(text: str, blocks: list[str], score: AIScore) -> list[FlaggedParagraph]:
-    flagged = flag_paragraphs(text)
+    if score.signals.get("uniform_rhythm", 0) > 0:
+        # The whole article is evenly paced, so judge shorter paragraphs' rhythm too.
+        flagged = flag_paragraphs(text, rhythm_variation=0.45, rhythm_min_sentences=3)
+    else:
+        flagged = flag_paragraphs(text)
     if flagged:
         return flagged
     # Nothing stands out on its own, so the article as a whole reads machine-written.
