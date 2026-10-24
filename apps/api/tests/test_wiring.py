@@ -92,8 +92,8 @@ async def build_llm(settings: Settings) -> LLM:
 def test_gemini_and_groq_defaults_favour_fast_models() -> None:
     settings = make_settings()
     assert settings.gemini_models() == {
-        "opus": "gemini-3.8-flash",
-        "sonnet": "gemini-3.8-flash",
+        "opus": "gemini-3.6-flash",
+        "sonnet": "gemini-3.6-flash",
         "haiku": "gemini-3.5-flash-lite",
     }
     assert settings.groq_models() == {
