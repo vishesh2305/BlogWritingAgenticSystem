@@ -7,7 +7,13 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from cwas.config import Tier
-from cwas.llm import Effort, LLMError, raise_for_http_status
+from cwas.llm import (
+    Effort,
+    LLMError,
+    LLMRateLimitError,
+    raise_for_http_status,
+    retry_after_seconds,
+)
 from cwas.usage import record_usage
 
 _REASONING_EFFORT: dict[Effort, str] = {
@@ -115,10 +121,16 @@ class GroqLLM:
             )
         except httpx.HTTPError as exc:
             raise LLMError(f"Groq request failed: {exc!r}") from exc
-        if response.status_code == 400:
+        if response.status_code in (400, 413):
             error = response.json().get("error", {})
             if error.get("code") == "json_validate_failed":
                 raise _SchemaRejected(error.get("message", ""), error.get("failed_generation", ""))
+            if error.get("code") == "rate_limit_exceeded":
+                # Free tier: 8,000 tokens/min; a large request in a busy minute gets 413.
+                raise LLMRateLimitError(
+                    f"Groq returned HTTP {response.status_code}: {response.text[:500]}",
+                    retry_after_seconds(response),
+                )
         raise_for_http_status("Groq", response)
 
         data = response.json()

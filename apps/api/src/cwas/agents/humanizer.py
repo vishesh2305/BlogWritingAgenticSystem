@@ -14,13 +14,25 @@ from cwas.agents.deps import AgentDeps
 from cwas.graph.state import RunState
 from cwas.llm import LLMError
 from cwas.models import AIScore, Brief, FlaggedParagraph, Rewrite
-from cwas.tools.ai_score import ai_score, flag_paragraphs, is_prose, split_blocks
+from cwas.tools.ai_score import (
+    ai_score,
+    flag_paragraphs,
+    is_prose,
+    sentence_count,
+    split_blocks,
+)
 from cwas.tools.guards import rewrite_violations
 
 _DASH_RANGE = re.compile(r"(\d)\s*—\s*(\d)")
 _DASH_PAIR = re.compile(r"\s*—\s*([^—\n.!?]+?)\s*—\s*")
 _DASH = re.compile(r"\s*—\s*")
 _DOUBLED_PUNCTUATION = re.compile(r",\s*([,.;:!?])")
+
+
+_RHYTHM_REASON = (
+    "the article's sentence rhythm is too even: mix sentences under 6 words with sentences "
+    "over 25 words"
+)
 
 
 def replace_em_dashes(text: str) -> str:
@@ -92,11 +104,16 @@ async def _humanize(
 
 
 def _targets(text: str, blocks: list[str], score: AIScore) -> list[FlaggedParagraph]:
+    flagged = flag_paragraphs(text)
     if score.signals.get("uniform_rhythm", 0) > 0:
-        # The whole article is evenly paced, so judge shorter paragraphs' rhythm too.
-        flagged = flag_paragraphs(text, rhythm_variation=0.45, rhythm_min_sentences=3)
-    else:
-        flagged = flag_paragraphs(text)
+        # Even pacing is spread over the whole article, so every paragraph with more than one
+        # sentence has to change its rhythm, not just the ones that stand out.
+        by_index = {f.index: f for f in flagged}
+        for index, block in enumerate(blocks):
+            if is_prose(block) and sentence_count(block) >= 2:
+                target = by_index.setdefault(index, FlaggedParagraph(index=index, reasons=[]))
+                target.reasons.append(_RHYTHM_REASON)
+        return sorted(by_index.values(), key=lambda f: f.index)
     if flagged:
         return flagged
     # Nothing stands out on its own, so the article as a whole reads machine-written.

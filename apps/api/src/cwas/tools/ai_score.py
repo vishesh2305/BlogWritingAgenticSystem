@@ -81,7 +81,8 @@ class _Stats:
 
 
 def split_blocks(text: str) -> list[str]:
-    """Split Markdown into blank-line separated blocks, keeping fenced code blocks whole."""
+    """Split Markdown into blank-line separated blocks, keeping fenced code blocks whole and
+    splitting a heading off the paragraph glued under it (some models write no blank line)."""
     blocks: list[str] = []
     for raw in _BLOCK_BREAK.split(text.strip()):
         block = raw.strip()
@@ -89,9 +90,18 @@ def split_blocks(text: str) -> list[str]:
             continue
         if blocks and len(_FENCE.findall(blocks[-1])) % 2 == 1:
             blocks[-1] += "\n\n" + block  # still inside an open code fence
-        else:
+            continue
+        while block.startswith("#") and "\n" in block:
+            heading, block = block.split("\n", 1)
+            blocks.append(heading.strip())
+            block = block.strip()
+        if block:
             blocks.append(block)
     return blocks
+
+
+def sentence_count(block: str) -> int:
+    return len(_analyze([block]).sentences)
 
 
 def is_prose(block: str) -> bool:
