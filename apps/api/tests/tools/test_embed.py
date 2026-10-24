@@ -155,3 +155,60 @@ async def test_gemini_wrong_vector_count_raises_embedding_error() -> None:
     async with httpx.AsyncClient() as client:
         with pytest.raises(EmbeddingError, match="1 texts"):
             await GeminiEmbedder(client, api_key="k").embed(["a"], "query")
+
+
+def quota_exceeded(delay: str) -> httpx.Response:
+    """Gemini's real free-tier 429: no Retry-After header, the delay is in RetryInfo."""
+    return httpx.Response(
+        429,
+        json={
+            "error": {
+                "code": 429,
+                "message": "Embed content requests per minute limit exceeded on Free Tier.",
+                "details": [
+                    {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": delay}
+                ],
+            }
+        },
+    )
+
+
+class Sleeps(list[float]):
+    async def __call__(self, seconds: float) -> None:
+        self.append(seconds)
+
+
+@respx.mock
+async def test_gemini_waits_out_a_free_tier_rate_limit_and_retries() -> None:
+    route = respx.post(GEMINI_URL).mock(side_effect=[quota_exceeded("3s"), gemini_reply])
+    sleeps = Sleeps()
+    async with httpx.AsyncClient() as client:
+        vectors = await GeminiEmbedder(client, api_key="k", sleep=sleeps).embed(["a"], "query")
+
+    assert sleeps == [3.0]
+    assert route.call_count == 2
+    assert len(vectors) == 1
+
+
+@respx.mock
+async def test_gemini_gives_up_after_max_retries() -> None:
+    route = respx.post(GEMINI_URL).mock(return_value=quota_exceeded("2s"))
+    sleeps = Sleeps()
+    async with httpx.AsyncClient() as client:
+        embedder = GeminiEmbedder(client, api_key="k", max_retries=2, sleep=sleeps)
+        with pytest.raises(EmbeddingError, match="429"):
+            await embedder.embed(["a"], "query")
+
+    assert sleeps == [2.0, 2.0]
+    assert route.call_count == 3
+
+
+@respx.mock
+async def test_gemini_does_not_wait_out_a_long_rate_limit() -> None:
+    respx.post(GEMINI_URL).mock(return_value=quota_exceeded("3600s"))
+    sleeps = Sleeps()
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(EmbeddingError):
+            await GeminiEmbedder(client, api_key="k", sleep=sleeps).embed(["a"], "query")
+
+    assert sleeps == []

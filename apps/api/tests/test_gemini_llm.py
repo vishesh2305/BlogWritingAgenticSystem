@@ -251,3 +251,30 @@ async def test_missing_usage_still_counts_the_call() -> None:
             await make_llm(client).text(tier="opus", system="s", prompt="p")
 
     assert (meter.total.calls, meter.total.input_tokens) == (1, 0)
+
+
+def quota_exceeded(delay: str) -> httpx.Response:
+    """Gemini's real free-tier 429: no Retry-After header, the delay is in RetryInfo."""
+    return httpx.Response(
+        429,
+        json={
+            "error": {
+                "code": 429,
+                "message": "Embed content requests per minute limit exceeded on Free Tier.",
+                "details": [
+                    {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": delay}
+                ],
+            }
+        },
+    )
+
+
+@respx.mock
+async def test_rate_limit_reads_the_retry_delay_from_the_error_body() -> None:
+    respx.post(FLASH_URL).mock(return_value=quota_exceeded("47.5s"))
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(LLMRateLimitError) as caught:
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
+
+    assert caught.value.retry_after == 47.5

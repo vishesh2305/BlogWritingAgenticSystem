@@ -1,7 +1,11 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from cwas.agents.kb_builder import kb_builder
+from cwas.kb.knowledge_base import KnowledgeBase
+from cwas.kb.store import InMemoryVectorStore
 from cwas.models import ScrapedPage
+from cwas.tools.embed import EmbeddingError, HashingEmbedder, InputType
 from tests.fakes import make_deps
 
 
@@ -37,3 +41,20 @@ async def test_extracts_numeric_facts_from_every_page() -> None:
     assert fact.id == "f1"
     assert fact.source_url == "https://a.com"
     assert fact.numbers == ["5", "20"]
+
+
+class FailingEmbedder:
+    async def embed(self, texts: list[str], input_type: InputType) -> list[list[float]]:
+        raise EmbeddingError("429 Too Many Requests")
+
+
+async def test_warns_when_the_knowledge_base_fell_back_to_offline_embeddings() -> None:
+    kb = KnowledgeBase(FailingEmbedder(), InMemoryVectorStore(), fallback=HashingEmbedder(256))
+    deps = replace(make_deps(), kb=kb)
+
+    update = await kb_builder(
+        {"run_id": "run-9", "sources": [page("https://a.com", "Inverters convert DC to AC.")]}, deps
+    )
+
+    assert update["kb_chunks"] == 1
+    assert any("embedding" in w for w in update["warnings"])
