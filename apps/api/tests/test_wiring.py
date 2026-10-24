@@ -115,10 +115,30 @@ async def test_gemini_with_groq_key_builds_a_fallback_chain() -> None:
     )
 
     assert isinstance(llm, FallbackLLM)
+    # Gemini quotas are per model (live: gemini-3.6-flash allows 20 requests/day on the free
+    # tier), so Flash-Lite comes before Groq, whose 8,000 tokens/min can't fit a writer call.
+    assert llm.provider_names == ["gemini", "gemini-lite", "groq"]
+
+
+def test_gemini_fallback_model_defaults_to_flash_lite() -> None:
+    assert make_settings().gemini_fallback_model == "gemini-3.5-flash-lite"
+
+
+async def test_an_empty_gemini_fallback_model_leaves_it_out() -> None:
+    llm = await build_llm(
+        make_settings(
+            llm_provider="gemini",
+            gemini_api_key="AIza-test",
+            groq_api_key="gsk-test",
+            gemini_fallback_model="",
+        )
+    )
+
+    assert isinstance(llm, FallbackLLM)
     assert llm.provider_names == ["gemini", "groq"]
 
 
-async def test_gemini_without_groq_key_runs_alone_and_warns(
+async def test_gemini_without_groq_key_falls_back_to_flash_lite_and_warns(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
@@ -126,9 +146,22 @@ async def test_gemini_without_groq_key_runs_alone_and_warns(
 
     llm = await build_llm(make_settings(llm_provider="gemini", gemini_api_key="AIza-test"))
 
+    assert isinstance(llm, FallbackLLM)
+    assert llm.provider_names == ["gemini", "gemini-lite"]
+    assert "GROQ_API_KEY" in caplog.text
+
+
+async def test_gemini_alone_when_there_is_no_fallback_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    llm = await build_llm(
+        make_settings(llm_provider="gemini", gemini_api_key="AIza-test", gemini_fallback_model="")
+    )
+
     assert isinstance(llm, ThrottledLLM)
     assert isinstance(llm.inner, GeminiLLM)
-    assert "GROQ_API_KEY" in caplog.text
 
 
 async def test_api_keys_never_reach_the_logs(caplog: pytest.LogCaptureFixture) -> None:
