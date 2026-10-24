@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr | None = None
     groq_api_key: SecretStr | None = None
-    gemini_model_opus: str = "gemini-3.8-flash"
-    gemini_model_sonnet: str = "gemini-3.8-flash"
+    gemini_model_opus: str = "gemini-3.6-flash"
+    gemini_model_sonnet: str = "gemini-3.6-flash"
     gemini_model_haiku: str = "gemini-3.5-flash-lite"
     groq_model_opus: str = "openai/gpt-oss-120b"
     groq_model_sonnet: str = "openai/gpt-oss-120b"

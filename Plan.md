@@ -47,7 +47,7 @@ Non-functional requirements: fast hosted models with automatic fallback, free fa
 
 Agent 11 (Visual / Media) from the earlier plan has been removed: the system produces text only.
 
-**Models:** Gemini (`gemini-3.8-flash`, `gemini-3.5-flash-lite` for the light tier) is the primary model for speed. Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`) takes over any call Gemini fails or rate-limits. Local Ollama and the Anthropic API remain alternative backends.
+**Models:** Gemini (`gemini-3.6-flash`, `gemini-3.5-flash-lite` for the light tier) is the primary model for speed; `gemini-3.8-flash` was measured at ~117 s per call on this account versus ~2 s, so it is not the default. Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`) takes over any call Gemini fails or rate-limits. Local Ollama and the Anthropic API remain alternative backends.
 
 ---
 
