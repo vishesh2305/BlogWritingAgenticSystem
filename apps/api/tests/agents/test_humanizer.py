@@ -3,12 +3,12 @@ from typing import Any
 import pytest
 
 from cwas.agents import prompts
-from cwas.agents.humanizer import humanizer, replace_em_dashes
+from cwas.agents.humanizer import add_contractions, humanizer, replace_em_dashes
 from cwas.llm import LLMError
 from cwas.models import Citation, Draft, Rewrite, RewrittenParagraph
 from cwas.tools.ai_score import ai_score
 from tests.fakes import FakeLLM, make_brief, make_deps
-from tests.samples import AI_PARAGRAPH, HUMAN_PARAGRAPH
+from tests.samples import AI_PARAGRAPH, HUMAN_PARAGRAPH, UNCONTRACTED
 
 HEADING = "# Going solar"
 MIXED = f"{HEADING}\n\n{HUMAN_PARAGRAPH}\n\n{AI_PARAGRAPH}"
@@ -298,3 +298,48 @@ async def test_an_evenly_paced_article_gets_every_multi_sentence_paragraph_rewri
     sent = [i for i in range(8) if f'<paragraph index="{i}"' in prompt]
     assert sent == [2, 4, 5]  # the bodies under both headings and the free paragraph
     assert "under 6 words" in prompt  # a concrete instruction, not just "too even"
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("It is cheap and you are covered.", "It's cheap and you're covered."),
+        ("Do not wait. It does not matter.", "Don't wait. It doesn't matter."),
+        ("Solar is not magic, and it is not cheap.", "Solar isn't magic, and it isn't cheap."),
+        ("You cannot and will not regret it.", "You can't and won't regret it."),
+        ("There is a catch. That is the part.", "There's a catch. That's the part."),
+        ("Leave it as it is. That is, roughly.", "Leave it as it is. That is, roughly."),
+        ("Let us start; I am sure.", "Let's start; I'm sure."),
+    ],
+)
+def test_add_contractions(before: str, after: str) -> None:
+    assert add_contractions(before) == after
+
+
+async def test_missing_contractions_are_added_without_an_llm_call() -> None:
+    # Live runs ended at 13.0 and 13.1 with no_contractions worth 3.8 to 6.7 points.
+    text = f"## What it is like\n\n{UNCONTRACTED}"
+    assert ai_score(text).signals["no_contractions"] > 0
+    llm = FakeLLM()
+
+    update = await humanizer(state(text), make_deps(llm=llm, ai_score_threshold=5.0))
+
+    [draft] = update["drafts"]
+    assert llm.calls == []
+    assert draft.markdown.startswith("## What it is like\n\n")  # headings keep their wording
+    assert "Solar isn't magic. It's a roof" in draft.markdown
+    assert "most families don't notice" in draft.markdown.lower()
+    assert "under 900 in the first summer [1]" in draft.markdown
+    assert draft.ai_score is not None
+    assert draft.ai_score.signals["no_contractions"] == 0
+
+
+async def test_a_formal_brief_keeps_its_uncontracted_style() -> None:
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+    deps = make_deps(llm=llm, ai_score_threshold=5.0, max_humanize_rounds=1)
+    formal = state(UNCONTRACTED)
+    formal["brief"] = make_brief(tone="formal and academic")
+
+    update = await humanizer(formal, deps)
+
+    assert "isn't" not in update["drafts"][0].markdown

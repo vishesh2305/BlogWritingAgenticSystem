@@ -20,3 +20,16 @@ HUMAN_PARAGRAPH = (
     "closer to 2,000. Would I do it again? Yes. But I'd ask about the inverter before anything "
     "else."
 )
+
+# Varied rhythm, no stock phrases, but not a single contraction.
+UNCONTRACTED = (
+    "Solar is not magic. It is a roof full of glass that turns daylight into power, and you "
+    "are paying for it once. Most families do not notice the panels after the first week. What "
+    "they notice is the bill. Ours fell from about 4,200 rupees a month to under 900 in the "
+    "first summer [1], and it did not climb back during the monsoon as much as we feared. "
+    "There is a catch, though. The inverter does not last as long as the panels, so you are "
+    "likely to replace it once. That is the part installers rarely mention when they quote you "
+    "a price over the phone. If you are on a rented roof, it is worth asking the owner first. "
+    "We did not, and it cost us a month of paperwork that nobody had warned us about. Would we "
+    "do it again? Yes, without a doubt, and we would start sooner."
+)
