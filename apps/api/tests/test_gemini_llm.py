@@ -278,3 +278,16 @@ async def test_rate_limit_reads_the_retry_delay_from_the_error_body() -> None:
             await make_llm(client).text(tier="opus", system="s", prompt="p")
 
     assert caught.value.retry_after == 47.5
+
+
+@respx.mock
+async def test_overloaded_model_is_treated_as_a_rate_limit() -> None:
+    # Live run: Gemini answered 503 "high demand" while Groq asked for a 1.7s wait; as a plain
+    # error the 503 stopped the chain from waiting and retrying.
+    respx.post(FLASH_URL).mock(
+        return_value=httpx.Response(503, json={"error": {"status": "UNAVAILABLE"}})
+    )
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(LLMRateLimitError, match="503"):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")

@@ -234,3 +234,44 @@ async def test_rewrite_that_keeps_the_primary_keyword_is_accepted() -> None:
     update = await humanizer(state(with_keyword), make_deps(llm=llm))
 
     assert update["drafts"][0].markdown.endswith(kept)
+
+
+WORDS = [
+    "the",
+    "crew",
+    "checked",
+    "every",
+    "panel",
+    "on",
+    "the",
+    "north",
+    "roof",
+    "and",
+    "then",
+    "tested",
+    "the",
+    "new",
+    "inverter",
+]
+
+
+def even_paragraph(lengths: tuple[int, ...]) -> str:
+    return " ".join(" ".join(WORDS[:n]).capitalize() + "." for n in lengths)
+
+
+async def test_an_evenly_paced_article_also_gets_its_short_even_paragraphs_rewritten() -> None:
+    # Live run: AI-likeness 13.0, almost all of it uniform_rhythm, yet only the two paragraphs
+    # with 4+ sentences were flagged, so a rewrite round could not bring the score down.
+    even = [even_paragraph((10, 12, 14)), even_paragraph((11, 13, 12))]
+    short = even_paragraph((12, 13))  # too few sentences to judge its rhythm on its own
+    text = "\n\n".join(["# Log", AI_PARAGRAPH, *even, short])
+    assert ai_score(text).signals["uniform_rhythm"] > 0
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+
+    await humanizer(state(text), make_deps(llm=llm, max_humanize_rounds=1))
+
+    prompt = llm.calls[0]["prompt"]
+    assert '<paragraph index="1"' in prompt  # the stock-phrase paragraph
+    assert '<paragraph index="2"' in prompt  # 3-sentence, evenly paced
+    assert '<paragraph index="3"' in prompt
+    assert '<paragraph index="4"' not in prompt  # two sentences: left alone
