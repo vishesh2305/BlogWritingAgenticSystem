@@ -12,6 +12,8 @@ from tests.samples import AI_PARAGRAPH, HUMAN_PARAGRAPH, UNCONTRACTED
 
 HEADING = "# Going solar"
 MIXED = f"{HEADING}\n\n{HUMAN_PARAGRAPH}\n\n{AI_PARAGRAPH}"
+# What the no-model polish (contractions, em dashes) makes of MIXED before any rewrite.
+POLISHED = MIXED.replace("It is important", "It's important")
 # Same facts and citation as AI_PARAGRAPH, in a human rhythm.
 FIXED = (
     "Solar's no longer a niche thing. Panels turn sunlight into power for the house, and the "
@@ -77,7 +79,7 @@ async def test_rewrite_that_drops_a_citation_is_rejected() -> None:
 
     update = await humanizer(state(MIXED), make_deps(llm=llm, max_humanize_rounds=1))
 
-    assert update["drafts"][0].markdown == MIXED
+    assert update["drafts"][0].markdown == POLISHED
     assert any("citation" in w for w in update["warnings"])
 
 
@@ -86,7 +88,7 @@ async def test_rewrite_that_invents_a_citation_is_rejected() -> None:
 
     update = await humanizer(state(MIXED), make_deps(llm=llm, max_humanize_rounds=1))
 
-    assert update["drafts"][0].markdown == MIXED
+    assert update["drafts"][0].markdown == POLISHED
 
 
 async def test_rewrites_of_unflagged_or_unknown_paragraphs_are_ignored() -> None:
@@ -129,15 +131,15 @@ async def test_a_rewrite_that_scores_worse_is_discarded() -> None:
 
     update = await humanizer(state(MIXED), make_deps(llm=llm, max_humanize_rounds=1))
 
-    assert update["drafts"][0].markdown == MIXED
+    assert update["drafts"][0].markdown == POLISHED
 
 
 async def test_llm_failure_keeps_the_draft_and_records_a_warning() -> None:
     update = await humanizer(state(MIXED), make_deps(llm=FailingLLM()))
 
     [draft] = update["drafts"]
-    assert draft.markdown == MIXED
-    assert draft.ai_score == ai_score(MIXED)
+    assert draft.markdown == POLISHED
+    assert draft.ai_score == ai_score(POLISHED)
     assert any("humanizer" in w.lower() for w in update["warnings"])
 
 
@@ -212,7 +214,7 @@ async def test_rewrite_that_adds_a_number_is_rejected() -> None:
 
     update = await humanizer(state(MIXED), make_deps(llm=llm, max_humanize_rounds=1))
 
-    assert update["drafts"][0].markdown == MIXED
+    assert update["drafts"][0].markdown == POLISHED
     assert any("40" in w for w in update["warnings"])
 
 
@@ -222,7 +224,7 @@ async def test_rewrite_that_drops_the_primary_keyword_is_rejected() -> None:
 
     update = await humanizer(state(with_keyword), make_deps(llm=llm, max_humanize_rounds=1))
 
-    assert update["drafts"][0].markdown == with_keyword
+    assert update["drafts"][0].markdown == with_keyword.replace("It is", "It's")
     assert any("keyword" in w for w in update["warnings"])
 
 

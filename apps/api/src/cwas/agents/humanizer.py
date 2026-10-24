@@ -43,10 +43,77 @@ def replace_em_dashes(text: str) -> str:
     return _DOUBLED_PUNCTUATION.sub(r"\1", text)
 
 
-def _without_em_dashes(text: str) -> str:
-    if "—" not in text:
+# Negations contract anywhere; a pronoun + verb only when more words follow, so "as it is." and
+# "that is, roughly" keep their meaning.
+_NEGATIONS = {
+    "do not": "don't",
+    "does not": "doesn't",
+    "did not": "didn't",
+    "is not": "isn't",
+    "are not": "aren't",
+    "was not": "wasn't",
+    "were not": "weren't",
+    "has not": "hasn't",
+    "have not": "haven't",
+    "had not": "hadn't",
+    "should not": "shouldn't",
+    "would not": "wouldn't",
+    "could not": "couldn't",
+    "will not": "won't",
+    "can not": "can't",
+    "cannot": "can't",
+}
+_PRONOUN_VERBS = {
+    "it is": "it's",
+    "that is": "that's",
+    "there is": "there's",
+    "here is": "here's",
+    "what is": "what's",
+    "you are": "you're",
+    "we are": "we're",
+    "they are": "they're",
+    "you will": "you'll",
+    "we will": "we'll",
+    "they will": "they'll",
+    "i am": "I'm",
+    "let us": "let's",
+}
+
+
+def _phrase(words: str) -> str:
+    return r"\b" + r"\s+".join(map(re.escape, words.split())) + r"\b"
+
+
+_CONTRACTIONS = [
+    (re.compile(_phrase(full), re.IGNORECASE), short) for full, short in _NEGATIONS.items()
+] + [
+    (re.compile(_phrase(full) + r"(?=\s+[\w₹$])", re.IGNORECASE), short)
+    for full, short in _PRONOUN_VERBS.items()
+]
+
+
+def add_contractions(text: str) -> str:
+    """Contract "do not", "it is", "you are" and similar the way people write them."""
+
+    for pattern, short in _CONTRACTIONS:
+
+        def contract(match: re.Match[str], short: str = short) -> str:
+            return short[0].upper() + short[1:] if match.group(0)[0].isupper() else short
+
+        text = pattern.sub(contract, text)
+    return text
+
+
+def _polish(text: str, contractions: bool) -> str:
+    """Fix style habits that need no model: em dashes and, unless formal, contractions."""
+    if "—" not in text and not contractions:
         return text
-    return "\n\n".join(replace_em_dashes(b) if is_prose(b) else b for b in split_blocks(text))
+
+    def fix(block: str) -> str:
+        block = replace_em_dashes(block)
+        return add_contractions(block) if contractions else block
+
+    return "\n\n".join(fix(b) if is_prose(b) else b for b in split_blocks(text))
 
 
 async def humanizer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
@@ -62,10 +129,11 @@ async def _humanize(
     text: str, brief: Brief, deps: AgentDeps, warnings: list[str]
 ) -> tuple[str, AIScore]:
     threshold = deps.settings.ai_score_threshold
+    contractions = "formal" not in brief.tone.lower()
     score = ai_score(text)
     if score.score >= threshold:
-        # Em dashes are a punctuation habit, not wording; fixing them needs no model.
-        text = _without_em_dashes(text)
+        # Em dashes and missing contractions are habits, not wording; no model needed.
+        text = _polish(text, contractions)
         score = ai_score(text)
     rounds = 0
     while score.score >= threshold and rounds < deps.settings.max_humanize_rounds:
@@ -85,7 +153,7 @@ async def _humanize(
             break
 
         candidate, rejected = _apply(blocks, targets, rewrite, brief.primary_keyword)
-        candidate = _without_em_dashes(candidate)
+        candidate = _polish(candidate, contractions)
         if rejected:
             warnings.append(
                 f"Humanizer rejected {len(rejected)} rewritten paragraph(s): "
