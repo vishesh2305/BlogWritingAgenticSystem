@@ -14,10 +14,23 @@ from cwas.models import Brief, Citation, Draft
 _REF = r"(?:(?:n|source|src|#)\s*)?\d+"
 _CITATION = re.compile(rf"\s?\[({_REF}(?:\s*[,;]\s*{_REF})*)\](?!\()", re.IGNORECASE)
 _NUMBER = re.compile(r"\d+")
+# gpt-oss models (the Groq fallback) cite as 【2†source】 or 【2†L5-L9】.
+_OSS_CITATION = re.compile(r"【\s*(\d+)(?:†[^】]*)?】")
+_OSS_MARKER = re.compile(r"\s*【[^】]*】")
 
 
 class WriterError(Exception):
     pass
+
+
+def _bracket_oss_citations(markdown: str) -> str:
+    """Rewrite numbered 【n†…】 markers as [n] and drop any other 【…】 marker."""
+
+    def bracket(match: re.Match[str]) -> str:
+        before = match.string[match.start() - 1] if match.start() else " "
+        return ("" if before.isspace() or before in "]】" else " ") + f"[{match.group(1)}]"
+
+    return _OSS_MARKER.sub("", _OSS_CITATION.sub(bracket, markdown))
 
 
 def _brief_block(brief: Brief) -> str:
@@ -72,7 +85,7 @@ async def writer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
         leading_space = match.group(0)[: len(match.group(0)) - len(match.group(0).lstrip())]
         return leading_space + "".join(f"[{n}]" for n in valid)
 
-    cleaned = _CITATION.sub(keep_valid, markdown).strip()
+    cleaned = _CITATION.sub(keep_valid, _bracket_oss_citations(markdown)).strip()
     citations = [
         Citation(number=n, url=url_by_number[n], title=titles[url_by_number[n]])
         for n in sorted(used)
