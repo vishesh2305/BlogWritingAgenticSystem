@@ -10,7 +10,7 @@ from anthropic import AsyncAnthropic
 from langgraph.checkpoint.memory import InMemorySaver
 
 from cwas.agents.deps import AgentDeps
-from cwas.config import Settings
+from cwas.config import Settings, Tier
 from cwas.fallback_llm import FallbackLLM
 from cwas.gemini_llm import GeminiLLM
 from cwas.graph.builder import build_graph
@@ -69,32 +69,31 @@ def _build_gemini(settings: Settings, http: httpx.AsyncClient) -> LLM:
             "GEMINI_API_KEY is required when LLM_PROVIDER=gemini "
             "(or set LLM_PROVIDER=ollama to use a free local model)"
         )
-    gemini = _throttled(
-        GeminiLLM(
-            http,
-            api_key=settings.gemini_api_key.get_secret_value(),
-            models=settings.gemini_models(),
-            timeout=settings.hosted_llm_timeout,
-        ),
-        settings.gemini_requests_per_minute,
-        settings,
-    )
-    if settings.groq_api_key is None:
-        logger.warning("GROQ_API_KEY not set; Gemini runs without a fallback")
-        return gemini
+    key = settings.gemini_api_key.get_secret_value()
 
-    groq = _throttled(
-        GroqLLM(
+    def gemini(models: dict[Tier, str]) -> ThrottledLLM:
+        llm = GeminiLLM(http, api_key=key, models=models, timeout=settings.hosted_llm_timeout)
+        return _throttled(llm, settings.gemini_requests_per_minute, settings)
+
+    # Gemini quotas are per model, so a second Gemini model is the cheapest first fallback.
+    providers: list[tuple[str, LLM]] = [("gemini", gemini(settings.gemini_models()))]
+    if lite := settings.gemini_fallback_model:
+        providers.append(("gemini-lite", gemini({"opus": lite, "sonnet": lite, "haiku": lite})))
+    if settings.groq_api_key is None:
+        logger.warning("GROQ_API_KEY not set; no fallback outside Gemini")
+    else:
+        groq = GroqLLM(
             http,
             api_key=settings.groq_api_key.get_secret_value(),
             models=settings.groq_models(),
             timeout=settings.hosted_llm_timeout,
-        ),
-        settings.groq_requests_per_minute,
-        settings,
-    )
-    logger.info("using Gemini %s with Groq fallback", settings.gemini_model_opus)
-    return FallbackLLM([("gemini", gemini), ("groq", groq)])
+        )
+        providers.append(("groq", _throttled(groq, settings.groq_requests_per_minute, settings)))
+
+    if len(providers) == 1:
+        return providers[0][1]
+    logger.info("LLM chain: %s", " -> ".join(name for name, _ in providers))
+    return FallbackLLM(providers)
 
 
 async def _build_llm(settings: Settings, http: httpx.AsyncClient, stack: AsyncExitStack) -> LLM:

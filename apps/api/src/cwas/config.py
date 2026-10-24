@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     gemini_model_opus: str = "gemini-3.6-flash"
     gemini_model_sonnet: str = "gemini-3.6-flash"
     gemini_model_haiku: str = "gemini-3.5-flash-lite"
+    # Tried after the main Gemini model and before Groq (quotas are per model); "" disables.
+    gemini_fallback_model: str = "gemini-3.5-flash-lite"
     groq_model_opus: str = "openai/gpt-oss-120b"
     groq_model_sonnet: str = "openai/gpt-oss-120b"
     groq_model_haiku: str = "openai/gpt-oss-20b"
