@@ -31,6 +31,14 @@
 | K | Client-side rate limits + shared rewrite guards | `030b2de`: 3 collection errors; 13 failed (`FallbackLLM` has no `sleep`; humanizer accepts added numbers and dropped keyword) | `91050b9`: 260 passed, coverage 98.45% |
 | L | Never wait out a long rate limit | `6bc13f8`: 1 failed (slept 120 s) | `be1ca8d`: 261 passed, coverage 98.46% |
 | M | Live-run findings: weak facts, silent missing competitors | `a2c3f49`: 2 failed | `72e1c6f`: 263 passed, coverage 98.46% |
+| N | Default main Gemini model → `gemini-3.6-flash` (3.8 Flash measured ~117 s/call) | `d17f69d`: 1 failed | `19f73b2`: 263 passed, 98.46% |
+| O | Gemini embedding free-tier 429 (100 texts/min, delay only in `RetryInfo`) | `ea886b2`: 6 failed | `c49bb4c`: 270 passed, 98.26% |
+| P | 503 overload as rate limit; evenly paced 3-sentence paragraphs targeted | `90db7dd`: 2 failed | `3968844`: 272 passed, 98.06% |
+| Q | gpt-oss `【n†source】` citations from the Groq fallback | `e3a0a7e`: 3 failed | `6ef7770`: 275 passed, 98.06% |
+| R | Headings glued to paragraphs; article-wide rhythm targets; Groq TPM 413 as rate limit | `2b3b689`: 3 failed | `92e3205`: 278 passed, 98.04% |
+| S | Contractions added without an LLM call (unless formal) | `41a53a6`: collection error | `aca49ce`: 287 passed, 98.26% |
+| T | Outline instead of the full article when most paragraphs are rewritten | `a95acb9`: 1 failed | `a71df3f`: 288 passed, 98.26% |
+| U | Gemini Flash-Lite as the first fallback before Groq | `5c52761`: 3 failed | `c1ccead`: 291 passed, 98.27% |
 
 Every RED in cycles A–C was a compile-time (import) failure caused by the missing implementation, not by broken test setup. In cycle D the wiring tests failed at runtime for the intended reason: Ollama settings and wiring didn't exist yet.
 
@@ -81,6 +89,8 @@ After cycle G: `pytest --cov` → **218 passed, total coverage 98.10%**. New mod
 
 After Phase A (cycle M): `pytest --cov` → **263 passed, total coverage 98.46%**.
 
+After cycle U: `pytest --cov` → **291 passed, total coverage 98.27%**.
+
 ## Manual smoke test (real server, placeholder keys)
 
 `uvicorn cwas.main:app`: `/health` → `{"status":"ok"}`; empty prompt → 422; unknown run → 404; OpenAPI lists all 5 routes. Without `TAVILY_API_KEY`, startup fails with `ConfigError: TAVILY_API_KEY is required for web research`.
@@ -105,7 +115,7 @@ Same prompt and setup as above, run through `RunManager` with `.env` defaults.
 | 3 (`cf35c2f`) | Completed, 1,602 words, but **AI-likeness 15.3, above the target**. Almost all of it was `em_dashes` 10.0: 34 em dashes, mostly one per paragraph, so only 8 paragraphs were flagged, and the 8B model kept its dashes through 2 rewrite rounds. A warning reported the miss. Replaying the later fix offline on this article: 15.3 → 5.3. | 4m52s (humanizer 96s) |
 | 4 (`edc0116`, after the RED `77f6aac` → GREEN fix) | Completed, 1,332 words, **AI-likeness 5.8** (only `lists` 5.8). Replacing dashes in code was enough, so no LLM rewrite was needed. Citations [1][2] match the 2 listed sources; the 2 em dashes left are in headings. 4 of 6 DuckDuckGo queries timed out and became warnings. | 2m27s (humanizer 14 ms) |
 
-### Phase A live check (local Ollama, DuckDuckGo, hashing embedder; `bb5fc56`…`be1ca8d`)
+### Phase A live check (local Ollama, DuckDuckGo, hashing embedder; `69069b1`…`be1ca8d`)
 
 | Check | Result |
 |---|---|
@@ -116,10 +126,29 @@ Same prompt and setup as above, run through `RunManager` with `.env` defaults.
 
 Found for Phase B: competitor headings keep bold markers (`## **Which Are…**`), so the Strategist must strip inline formatting when reading outlines.
 
+### Cycles N–U: first live testing with Gemini and Groq keys (2026-10-24)
+
+Provider checks (each API alone): Gemini text and JSON on both tiers, Groq text and JSON on both tiers, and Gemini embeddings (768 dims, normalised, the relevant document ranks first) all passed.
+
+| Run | Chain actually used | Result | AI-likeness |
+|---|---|---|---|
+| 1 | Gemini 503 → Groq for the brief | **Failed** in kb_builder: Gemini embeddings 429 (free tier 100 texts/min) → cycle O | – |
+| 2 | Gemini, Groq for one humanizer round | Completed in 75 s, citations [1]–[5]; humanizer round 2 lost to Gemini 503 + Groq 429 → cycle P | 13.0 |
+| 3 | Gemini cooling → **Groq writer** | Completed in 68 s, but **no citations**: gpt-oss writes `【2†source】` → cycle Q | 7.8 |
+| 4 | Writer forced onto Groq (invalid Gemini model) | Failed: Groq 413 on the writer (8,000 tokens/min) | – |
+| 5 | Gemini | Completed in 89 s, citations [1]–[3]; text under glued headings was never scored or rewritten → cycle R | 23.4 |
+| 6 / 7 | Groq writer (forced) / Gemini | Both completed, citations [1]–[4] (gpt-oss fix works); humanizer starved by Groq 413 → cycles S, T | 13.1 / 13.0 |
+| 8 / 9 | Gemini / forced Groq | 8 completed (citations [1]–[3]); 9 failed (Groq 413 on the writer). Root cause found: **`gemini-3.6-flash` free tier allows 20 requests/day**, used up → cycle U | 21.0 / – |
+| 10 | Flash quota spent → **Flash-Lite** writer and humanizer | Completed in 133 s, 674 words, citations [1]–[6], embeddings survived their 429 by waiting | 17.8 |
+
+What the live runs confirm: the fallback chain, embedding retry, gpt-oss citation handling, heading-preserving research (2–3 competitors per run with outlines and JSON-LD types), fact extraction (50–120 facts) and token accounting all work against the real APIs. What they don't confirm: **the AI-likeness target.** Only 1 of 7 completed hosted runs finished below 10 (7.8, and that run had lost its citations). The others ended at 13–23, mostly on `uniform_rhythm` and `no_contractions`, because the humanizer's rewrite call was starved by quotas or made by Flash-Lite, which ignores the contraction and rhythm instructions.
+
 ## Known gaps (not verified)
 
-- **No live run with Gemini embeddings or the rate limiter.** Both are covered by mocks only, for the same reason.
-- **No live run on Gemini or Groq.** No `GEMINI_API_KEY` or `GROQ_API_KEY` was available, so those backends and the fallback are covered only by mocks. The defaults (`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`) and the request shapes (`responseJsonSchema`, `thinkingConfig.thinkingLevel`, Groq `json_schema`) come from the providers' docs as of 2026-10-23 and haven't been run against the real APIs.
+- **AI-likeness below 10 is not reliable on free-tier quotas.** See the table above. Options: a paid Gemini tier (no 20 requests/day cap), more rewrite rounds, or calibrating the local score against an external detector before tuning further.
+- **Free-tier quotas measured on this account:** `gemini-3.6-flash` 20 requests/day; `gemini-embedding-2` 100 texts/min; Groq `gpt-oss-120b` and `gpt-oss-20b` 8,000 tokens/min and 1,000 requests/day (Groq's Llama models return 404 for this account). A writer call (~10,000 requested tokens) can never fit Groq's per-minute limit, so Groq can only take smaller calls.
+
+- **The client-side rate limiter's limits are guesses** (10 Gemini / 30 Groq requests per minute); the real limits above are per day or per token, so they should be tuned to the account.
 - **The AI-likeness score is a local proxy, not GPTZero, Originality.ai or Turnitin.** Its weights haven't been checked against any external detector, so "below 10" here doesn't guarantee a low score there. Plugging in an external detector is still open.
 - **Groq free-tier token limits** may reject the writer's prompt (HTTP 413). Those failures surface as `LLMError`; the prompt isn't trimmed and retried.
 

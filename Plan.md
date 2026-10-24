@@ -1,6 +1,6 @@
 # Plan: Content Writing Multi-Agent System
 
-**Status:** The backend vertical slice and Phase A (groundwork) are built on branch `feat/backend-vertical-slice`. Agents 1, 2, 3, 5, 7 and 10 run today, and 7 already keeps the AI-likeness score below 10. Next: Phase B (Content Strategist). See [`apps/api/README.md`](apps/api/README.md) and the TDD evidence in [`docs/tdd/backend-vertical-slice.tdd.md`](docs/tdd/backend-vertical-slice.tdd.md).
+**Status:** The backend vertical slice and Phase A (groundwork) are built on branch `feat/backend-vertical-slice`. Agents 1, 2, 3, 5, 7 and 10 run today against live Gemini and Groq keys. The AI-likeness target (below 10) is met on local runs but only in 1 of 7 completed hosted free-tier runs so far (13–23 otherwise), so it is not yet reliable. Next: Phase B (Content Strategist). See [`apps/api/README.md`](apps/api/README.md) and the TDD evidence in [`docs/tdd/backend-vertical-slice.tdd.md`](docs/tdd/backend-vertical-slice.tdd.md).
 **Updated:** 2026-10-23
 **Scope:** Text only. The system writes blog articles; it does not generate images, and image, PDF and audio input are out of scope for now.
 
@@ -47,7 +47,7 @@ Non-functional requirements: fast hosted models with automatic fallback, free fa
 
 Agent 11 (Visual / Media) from the earlier plan has been removed: the system produces text only.
 
-**Models:** Gemini (`gemini-3.6-flash`, `gemini-3.5-flash-lite` for the light tier) is the primary model for speed; `gemini-3.8-flash` was measured at ~117 s per call on this account versus ~2 s, so it is not the default. Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`) takes over any call Gemini fails or rate-limits. Local Ollama and the Anthropic API remain alternative backends.
+**Models:** Gemini (`gemini-3.6-flash`, `gemini-3.5-flash-lite` for the light tier) is the primary model for speed; `gemini-3.8-flash` was measured at ~117 s per call on this account versus ~2 s, so it is not the default. If a call fails or is rate-limited, it goes to `gemini-3.5-flash-lite` (Gemini quotas are per model) and then to Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`). Free tiers are small: 20 requests/day for `gemini-3.6-flash`, 8,000 tokens/min on Groq. Local Ollama and the Anthropic API remain alternative backends.
 
 ---
 

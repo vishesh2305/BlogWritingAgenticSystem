@@ -39,7 +39,9 @@ GEMINI_API_KEY=...   # https://aistudio.google.com/apikey
 GROQ_API_KEY=...     # optional fallback: https://console.groq.com/keys
 ```
 
-Every call goes to Gemini first (`gemini-3.6-flash`, and `gemini-3.5-flash-lite` for the light tier; `gemini-3.8-flash` measured ~117 s per call against ~2 s, so it is not the default). If Gemini rate-limits, errors, times out, blocks the request or returns bad JSON, the same call is retried on Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`). A rate-limited provider sits out its `Retry-After` window, then rejoins. Without `GROQ_API_KEY`, Gemini runs alone and the server logs a warning. Override models with `GEMINI_MODEL_OPUS|SONNET|HAIKU` and `GROQ_MODEL_OPUS|SONNET|HAIKU`.
+Every call goes to Gemini first (`gemini-3.6-flash`, and `gemini-3.5-flash-lite` for the light tier; `gemini-3.8-flash` measured ~117 s per call against ~2 s, so it is not the default). If Gemini rate-limits, is overloaded (503), errors, times out, blocks the request or returns bad JSON, the same call is retried on `gemini-3.5-flash-lite` (`GEMINI_FALLBACK_MODEL`; Gemini quotas are per model) and then on Groq (`openai/gpt-oss-120b` / `gpt-oss-20b`). A rate-limited provider sits out its `Retry-After` window, then rejoins. Without `GROQ_API_KEY`, Gemini runs alone and the server logs a warning. Override models with `GEMINI_MODEL_OPUS|SONNET|HAIKU` and `GROQ_MODEL_OPUS|SONNET|HAIKU`.
+
+**Free-tier limits measured on a real account (2026-10-24):** `gemini-3.6-flash` allows **20 requests per day**, `gemini-embedding-2` 100 texts per minute, and Groq's `gpt-oss` models 8,000 tokens per minute. One article run makes 2–6 LLM calls, so the free Gemini tier covers only a handful of runs a day before Flash-Lite and Groq take over. Groq's per-minute limit is smaller than one writer call, so it can only take the smaller calls.
 
 Both providers are rate-limited on the client side (`GEMINI_REQUESTS_PER_MINUTE`, default 10; `GROQ_REQUESTS_PER_MINUTE`, default 30; at most `LLM_MAX_CONCURRENCY` calls in flight). Set these to your API tier. A call that would wait more than `LLM_MAX_WAIT` seconds (default 5) for a slot goes to the other provider instead. If both are rate-limited, the call waits once for the sooner one, but never more than 60 seconds, so an exhausted daily quota fails fast. With `GEMINI_API_KEY` set, the knowledge base also uses Gemini embeddings instead of the offline hashing embedder.
 
@@ -81,7 +83,7 @@ curl -X POST localhost:8000/runs/<run_id>/answer -H 'content-type: application/j
 ## Develop
 
 ```bash
-uv run pytest --cov          # 263 tests, coverage gate 80%
+uv run pytest --cov          # 291 tests, coverage gate 80%
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src              # strict
 ```
