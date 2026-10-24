@@ -198,9 +198,17 @@ def _prompt(brief: Brief, text: str, blocks: list[str], targets: list[FlaggedPar
         f"{blocks[t.index]}\n</paragraph>"
         for t in targets
     )
+    prose = sum(1 for b in blocks if is_prose(b))
+    if len(targets) * 2 <= prose:
+        context = f"<untrusted_article>\n{text}\n</untrusted_article>"
+    else:
+        # Most of the article is being rewritten anyway; sending it twice would overflow small
+        # tokens-per-minute quotas (Groq's free tier allows 8,000), so send its outline.
+        outline = "\n".join(b for b in blocks if b.startswith("#"))
+        context = f"<untrusted_outline>\n{outline}\n</untrusted_outline>"
     return (
         f"<brief>\nAudience: {brief.audience}\nTone: {brief.tone}\n</brief>\n\n"
-        f"<untrusted_article>\n{text}\n</untrusted_article>\n\n"
+        f"{context}\n\n"
         f"<paragraphs_to_rewrite>\n{paragraphs}\n</paragraphs_to_rewrite>"
     )
 
