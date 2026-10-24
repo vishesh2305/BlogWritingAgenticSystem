@@ -29,17 +29,34 @@ class LLMRateLimitError(LLMError):
         self.retry_after = retry_after
 
 
+def retry_after_seconds(response: Any) -> float | None:
+    """How long a 429 asks us to wait: the Retry-After header, or Google's RetryInfo detail
+    (`"retryDelay": "47s"`), which Gemini sends instead of the header."""
+    try:
+        return float(response.headers.get("retry-after", ""))
+    except ValueError:
+        pass
+    try:
+        error = response.json().get("error")
+    except ValueError:
+        return None
+    details = error.get("details", []) if isinstance(error, dict) else []
+    for detail in details:
+        if str(detail.get("@type", "")).endswith("RetryInfo"):
+            try:
+                return float(str(detail.get("retryDelay", "")).rstrip("s"))
+            except ValueError:
+                return None
+    return None
+
+
 def raise_for_http_status(provider: str, response: Any) -> None:
     """Map an HTTP error from a hosted provider (an httpx.Response) to an LLMError."""
     if not response.is_error:
         return
     message = f"{provider} returned HTTP {response.status_code}: {response.text[:500]}"
     if response.status_code == 429:
-        try:
-            retry_after: float | None = float(response.headers.get("retry-after", ""))
-        except ValueError:
-            retry_after = None
-        raise LLMRateLimitError(message, retry_after)
+        raise LLMRateLimitError(message, retry_after_seconds(response))
     raise LLMError(message)
 
 

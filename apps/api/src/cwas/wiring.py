@@ -151,7 +151,9 @@ async def runtime(settings: Settings) -> AsyncIterator[RunManager]:
         if settings.languagetool_url is None:
             logger.warning("LANGUAGETOOL_URL not set; grammar auto-correction disabled")
 
-        kb = KnowledgeBase(_build_embedder(settings, http), InMemoryVectorStore())
+        kb = KnowledgeBase(
+            _build_embedder(settings, http), InMemoryVectorStore(), fallback=HashingEmbedder()
+        )
         deps = AgentDeps(
             llm=llm,
             search=search,
