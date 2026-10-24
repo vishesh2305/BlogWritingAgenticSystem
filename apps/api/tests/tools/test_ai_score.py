@@ -89,3 +89,13 @@ def test_flags_machine_typical_paragraphs_with_reasons_and_skips_headings() -> N
 @pytest.mark.parametrize("block", ["# Heading with delve", "```\nlet's delve\n```", "| a | b |"])
 def test_never_flags_non_prose_blocks(block: str) -> None:
     assert flag_paragraphs(block) == []
+
+
+def test_a_heading_glued_to_its_paragraph_is_split_off() -> None:
+    # Live run: Gemini writes "### Heading" with the paragraph on the next line, and the whole
+    # block was treated as a heading, so its text was never scored or rewritten.
+    assert split_blocks("## Costs\nPanels cost money.\nThey last long.") == [
+        "## Costs",
+        "Panels cost money.\nThey last long.",
+    ]
+    assert ai_score(f"### Going solar\n{AI_PARAGRAPH}").score == ai_score(AI_PARAGRAPH).score

@@ -263,7 +263,7 @@ async def test_an_evenly_paced_article_also_gets_its_short_even_paragraphs_rewri
     # Live run: AI-likeness 13.0, almost all of it uniform_rhythm, yet only the two paragraphs
     # with 4+ sentences were flagged, so a rewrite round could not bring the score down.
     even = [even_paragraph((10, 12, 14)), even_paragraph((11, 13, 12))]
-    short = even_paragraph((12, 13))  # too few sentences to judge its rhythm on its own
+    short = even_paragraph((12,))  # a single sentence has no rhythm to fix
     text = "\n\n".join(["# Log", AI_PARAGRAPH, *even, short])
     assert ai_score(text).signals["uniform_rhythm"] > 0
     llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
@@ -274,4 +274,27 @@ async def test_an_evenly_paced_article_also_gets_its_short_even_paragraphs_rewri
     assert '<paragraph index="1"' in prompt  # the stock-phrase paragraph
     assert '<paragraph index="2"' in prompt  # 3-sentence, evenly paced
     assert '<paragraph index="3"' in prompt
-    assert '<paragraph index="4"' not in prompt  # two sentences: left alone
+    assert '<paragraph index="4"' not in prompt  # one sentence: left alone
+
+
+async def test_an_evenly_paced_article_gets_every_multi_sentence_paragraph_rewritten() -> None:
+    # Live run: AI-likeness 23.4, uniform_rhythm 20.7 spread over many short paragraphs, many
+    # glued under their headings; only 1 of 46 blocks was sent for rewriting.
+    text = "\n\n".join(
+        [
+            "# Guide",
+            "## Costs\n" + even_paragraph((12, 13)),
+            "## Savings\n" + even_paragraph((13, 12)),
+            even_paragraph((12, 14)),
+            even_paragraph((13,)),
+        ]
+    )
+    assert ai_score(text).signals["uniform_rhythm"] > 0
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+
+    await humanizer(state(text), make_deps(llm=llm, max_humanize_rounds=1))
+
+    prompt = llm.calls[0]["prompt"]
+    sent = [i for i in range(8) if f'<paragraph index="{i}"' in prompt]
+    assert sent == [2, 4, 5]  # the bodies under both headings and the free paragraph
+    assert "under 6 words" in prompt  # a concrete instruction, not just "too even"

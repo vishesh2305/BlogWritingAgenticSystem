@@ -207,3 +207,25 @@ async def test_token_usage_is_recorded() -> None:
             await make_llm(client).text(tier="opus", system="s", prompt="p")
 
     assert (meter.total.input_tokens, meter.total.output_tokens) == (7, 9)
+
+
+@respx.mock
+async def test_tokens_per_minute_overflow_is_a_rate_limit() -> None:
+    # Live: the free tier allows 8,000 tokens/min; a writer-sized request in a busy minute
+    # gets 413 with code rate_limit_exceeded, which is temporary, not a permanent error.
+    respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(
+            413,
+            json={
+                "error": {
+                    "message": "Request too large on tokens per minute (TPM): Limit 8000",
+                    "type": "tokens",
+                    "code": "rate_limit_exceeded",
+                }
+            },
+        )
+    )
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(LLMRateLimitError, match="413"):
+            await make_llm(client).text(tier="opus", system="s", prompt="p")
