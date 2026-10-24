@@ -345,3 +345,20 @@ async def test_a_formal_brief_keeps_its_uncontracted_style() -> None:
     update = await humanizer(formal, deps)
 
     assert "isn't" not in update["drafts"][0].markdown
+
+
+async def test_rewriting_most_paragraphs_sends_an_outline_not_the_article_twice() -> None:
+    # Live run: the whole article plus every paragraph again overflowed Groq's free tier
+    # (8,000 tokens/min), so the fallback could not take the humanizer call.
+    body = even_paragraph((12, 13))
+    text = "\n\n".join(
+        ["# Guide", "## Costs\n" + body, "## Savings\n" + even_paragraph((13, 12)), body + " Ok."]
+    )
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+
+    await humanizer(state(text), make_deps(llm=llm, max_humanize_rounds=1))
+
+    prompt = llm.calls[0]["prompt"]
+    assert "<untrusted_article>" not in prompt
+    assert "<untrusted_outline>\n# Guide\n## Costs\n## Savings\n</untrusted_outline>" in prompt
+    assert prompt.count(body) == 2  # once per paragraph that contains it, not again as context
