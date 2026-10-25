@@ -382,7 +382,7 @@ async def test_a_detector_score_under_target_ends_after_one_call_without_an_llm(
 
 
 async def test_paragraphs_the_detector_flags_are_rewritten_then_rechecked() -> None:
-    detector = FakeDetector([60.0, 5.0], flag="Inverters")  # flags the human paragraph
+    detector = FakeDetector([40.0, 5.0], flag="Inverters")  # flags the human paragraph
     rewritten = HUMAN_PARAGRAPH.replace(
         "Inverters, it turned out.", "The inverters, it turned out."
     )
@@ -401,7 +401,7 @@ async def test_paragraphs_the_detector_flags_are_rewritten_then_rechecked() -> N
 
 
 async def test_a_round_the_detector_does_not_score_lower_is_discarded() -> None:
-    detector = FakeDetector([60.0, 70.0], flag="Inverters")
+    detector = FakeDetector([40.0, 45.0], flag="Inverters")
     llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
 
     update = await humanizer(
@@ -410,16 +410,15 @@ async def test_a_round_the_detector_does_not_score_lower_is_discarded() -> None:
 
     [draft] = update["drafts"]
     assert draft.markdown == POLISHED
-    assert draft.detector_score.score == 60.0  # type: ignore[union-attr]
-    assert any("AI detector" in w and "60" in w for w in update["warnings"])
+    assert draft.detector_score.score == 40.0  # type: ignore[union-attr]
+    assert any("AI detector" in w and "40" in w for w in update["warnings"])
 
 
 async def test_detector_calls_are_capped_at_one_per_round_plus_one() -> None:
-    detector = FakeDetector([60.0], flag="Inverters")
-    rewritten = HUMAN_PARAGRAPH.replace(
-        "Inverters, it turned out.", "The inverters, it turned out."
-    )
-    llm = FakeLLM(structured={Rewrite: [rewrite(1, rewritten)]})
+    detector = FakeDetector([40.0, 30.0, 20.0], flag="March")  # each round helps
+    first = HUMAN_PARAGRAPH.replace("Inverters, it turned out.", "The inverters, it turned out.")
+    second = first.replace("So I paid more.", "So I paid more, happily.")
+    llm = FakeLLM(structured={Rewrite: [rewrite(1, first), rewrite(1, second)]})
 
     await humanizer(state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=2))
 
@@ -427,7 +426,7 @@ async def test_detector_calls_are_capped_at_one_per_round_plus_one() -> None:
 
 
 async def test_a_round_that_changes_nothing_is_not_sent_to_the_detector() -> None:
-    detector = FakeDetector([60.0], flag="Inverters")
+    detector = FakeDetector([40.0], flag="Inverters")
     llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
 
     await humanizer(state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=2))
@@ -459,7 +458,7 @@ class QuotaRunsOutDetector(FakeDetector):
 
 
 async def test_a_detector_that_drops_out_mid_run_hands_over_to_the_local_score() -> None:
-    detector = QuotaRunsOutDetector([60.0], flag="Inverters")
+    detector = QuotaRunsOutDetector([40.0], flag="Inverters")
     llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
 
     update = await humanizer(
@@ -470,3 +469,33 @@ async def test_a_detector_that_drops_out_mid_run_hands_over_to_the_local_score()
     assert draft.markdown == f"{HEADING}\n\n{HUMAN_PARAGRAPH}\n\n{FIXED}"  # judged locally
     assert draft.detector_score is None
     assert any("detector unavailable" in w for w in update["warnings"])
+
+
+async def test_a_detector_score_out_of_reach_is_reported_without_rewriting() -> None:
+    # Live: Sapling rated LLM-written articles 95-100 and two LLM rewrite rounds left them at
+    # 99.7, so far-off scores skip the rounds (about 10s and two detector calls saved).
+    detector, llm = FakeDetector([99.0], flag="Inverters"), FakeLLM()
+
+    update = await humanizer(state(MIXED), make_deps(llm=llm, detector=detector))
+
+    [draft] = update["drafts"]
+    assert llm.calls == []
+    assert len(detector.texts) == 1
+    assert draft.markdown == POLISHED  # the free local fixes still apply
+    assert draft.detector_score.score == 99.0  # type: ignore[union-attr]
+    assert any("99" in w and "out of reach" in w for w in update["warnings"])
+
+
+async def test_rewriting_stops_once_a_round_gains_too_little() -> None:
+    detector = FakeDetector([40.0, 38.0], flag="March")
+    first = HUMAN_PARAGRAPH.replace("Inverters, it turned out.", "The inverters, it turned out.")
+    second = first.replace("So I paid more.", "So I paid more, happily.")
+    llm = FakeLLM(structured={Rewrite: [rewrite(1, first), rewrite(1, second)]})
+
+    update = await humanizer(
+        state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=3)
+    )
+
+    assert len(llm.calls) == 1
+    assert len(detector.texts) == 2
+    assert update["drafts"][0].detector_score.score == 38.0  # type: ignore[union-attr]
