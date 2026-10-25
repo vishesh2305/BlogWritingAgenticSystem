@@ -36,6 +36,7 @@ class RunView(BaseModel):
     article: str | None
     brief: dict[str, Any] | None
     ai_score: dict[str, Any] | None
+    detector_score: dict[str, Any] | None
     usage: dict[str, int]
     warnings: list[str]
     error: str | None
@@ -87,6 +88,7 @@ def create_app(manager: RunManager | None = None, settings: Settings | None = No
             article=run.article,
             brief=run.brief,
             ai_score=run.ai_score,
+            detector_score=run.detector_score,
             usage=run.meter.total.model_dump(),
             warnings=run.warnings,
             error=run.error,

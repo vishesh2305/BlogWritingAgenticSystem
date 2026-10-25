@@ -21,6 +21,7 @@ from cwas.llm import LLM, AnthropicLLM
 from cwas.ollama_llm import OllamaLLM
 from cwas.runs import RunManager
 from cwas.throttled_llm import ThrottledLLM
+from cwas.tools.detector import AIDetector, SaplingDetector
 from cwas.tools.embed import Embedder, GeminiEmbedder, HashingEmbedder, VoyageEmbedder
 from cwas.tools.grammar import LanguageToolChecker
 from cwas.tools.scrape import InMemoryPageCache, Scraper
@@ -135,6 +136,15 @@ def _build_embedder(settings: Settings, http: httpx.AsyncClient) -> Embedder:
     return HashingEmbedder()
 
 
+def _build_detector(settings: Settings, http: httpx.AsyncClient) -> AIDetector | None:
+    if settings.sapling_api_key is None:
+        logger.info("SAPLING_API_KEY not set; the humanizer uses the local AI-likeness score")
+        return None
+    return SaplingDetector(
+        http, settings.sapling_api_key.get_secret_value(), timeout=settings.detector_timeout
+    )
+
+
 @asynccontextmanager
 async def runtime(settings: Settings) -> AsyncIterator[RunManager]:
     async with httpx.AsyncClient() as http, AsyncExitStack() as stack:
@@ -164,5 +174,6 @@ async def runtime(settings: Settings) -> AsyncIterator[RunManager]:
                 else None
             ),
             settings=settings,
+            detector=_build_detector(settings, http),
         )
         yield RunManager(build_graph(deps, checkpointer=InMemorySaver()), cleanup=kb.drop)

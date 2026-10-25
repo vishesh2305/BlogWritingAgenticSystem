@@ -34,6 +34,7 @@ class Run:
     article: str | None = None
     brief: dict[str, Any] | None = None
     ai_score: dict[str, Any] | None = None
+    detector_score: dict[str, Any] | None = None
     meter: UsageMeter = field(default_factory=UsageMeter, repr=False)
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
@@ -111,8 +112,11 @@ class RunManager:
             state = (await self._graph.aget_state(config)).values
             run.article = state["final_article"]
             run.brief = state["brief"].model_dump()
-            delivered = state["drafts"][0].ai_score
-            run.ai_score = delivered.model_dump() if delivered else None
+            delivered = state["drafts"][0]
+            run.ai_score = delivered.ai_score.model_dump() if delivered.ai_score else None
+            run.detector_score = (
+                delivered.detector_score.model_dump() if delivered.detector_score else None
+            )
             run.warnings = state.get("warnings", [])
             run.status = "completed"
             await run.publish({"type": "done"})

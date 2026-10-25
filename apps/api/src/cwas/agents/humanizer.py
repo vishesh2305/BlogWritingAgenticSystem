@@ -1,11 +1,14 @@
 """Agent 7 - Humanizer: rewrites machine-sounding paragraphs until the AI-likeness score is low.
 
+With an external detector configured, its score is the target and its sentence scores pick the
+paragraphs to rewrite; it is called once up front and once per changed round, never more.
 Only flagged prose paragraphs are rewritten, so headings, code and the rest of the article
 stay byte-for-byte intact. A rewrite that changes a paragraph's citations, adds a number or
 drops the primary keyword is rejected, and a round that does not lower the score is discarded.
 """
 
 import re
+from dataclasses import dataclass
 from html import escape
 from typing import Any
 
@@ -13,7 +16,7 @@ from cwas.agents import prompts
 from cwas.agents.deps import AgentDeps
 from cwas.graph.state import RunState
 from cwas.llm import LLMError
-from cwas.models import AIScore, Brief, FlaggedParagraph, Rewrite
+from cwas.models import AIScore, Brief, DetectorScore, FlaggedParagraph, Rewrite
 from cwas.tools.ai_score import (
     ai_score,
     flag_paragraphs,
@@ -21,6 +24,7 @@ from cwas.tools.ai_score import (
     sentence_count,
     split_blocks,
 )
+from cwas.tools.detector import AIDetector, DetectorError
 from cwas.tools.guards import rewrite_violations
 
 _DASH_RANGE = re.compile(r"(\d)\s*—\s*(\d)")
@@ -120,26 +124,99 @@ async def humanizer(state: RunState, deps: AgentDeps) -> dict[str, Any]:
     warnings: list[str] = []
     drafts = []
     for draft in state["drafts"]:
-        text, score = await _humanize(draft.markdown, state["brief"], deps, warnings)
-        drafts.append(draft.model_copy(update={"markdown": text, "ai_score": score}))
+        text, score, verdict = await _humanize(draft.markdown, state["brief"], deps, warnings)
+        detector_score = (
+            DetectorScore(
+                provider=verdict.provider, score=verdict.score, ai_fraction=verdict.ai_fraction
+            )
+            if verdict
+            else None
+        )
+        drafts.append(
+            draft.model_copy(
+                update={"markdown": text, "ai_score": score, "detector_score": detector_score}
+            )
+        )
     return {"drafts": drafts, "warnings": warnings}
+
+
+@dataclass
+class _Verdict:
+    provider: str
+    score: float
+    ai_fraction: float | None
+    flagged: dict[int, int]  # block index -> number of sentences the detector flags
+
+
+class _DetectorGate:
+    """Runs the external detector at most `max_calls` times and stops using it after the first
+    failure, so a slow or exhausted detector can never hold up or break a run."""
+
+    def __init__(self, detector: AIDetector | None, max_calls: int, warnings: list[str]) -> None:
+        self._detector = detector
+        self._calls_left = max_calls
+        self._warnings = warnings
+
+    async def check(self, text: str) -> _Verdict | None:
+        if self._detector is None or self._calls_left <= 0:
+            return None
+        self._calls_left -= 1
+        blocks = split_blocks(text)
+        prose, spans = _prose_with_spans(blocks)
+        try:
+            result = await self._detector.detect(prose)
+        except DetectorError as exc:
+            self._detector = None
+            self._warnings.append(
+                f"AI detector unavailable; the local AI-likeness score was used instead: {exc}"
+            )
+            return None
+        flagged: dict[int, int] = {}
+        for sentence in result.sentences:
+            if sentence.score >= 0.5:
+                for index, start, end in spans:
+                    if start <= sentence.start < end:
+                        flagged[index] = flagged.get(index, 0) + 1
+        return _Verdict(self._detector.name, result.score, result.ai_fraction, flagged)
+
+
+def _prose_with_spans(blocks: list[str]) -> tuple[str, list[tuple[int, int, int]]]:
+    """Join the prose blocks (no headings, tables or code) and remember where each one sits."""
+    parts: list[str] = []
+    spans: list[tuple[int, int, int]] = []
+    offset = 0
+    for index, block in enumerate(blocks):
+        if not is_prose(block):
+            continue
+        spans.append((index, offset, offset + len(block)))
+        parts.append(block)
+        offset += len(block) + 2
+    return "\n\n".join(parts), spans
 
 
 async def _humanize(
     text: str, brief: Brief, deps: AgentDeps, warnings: list[str]
-) -> tuple[str, AIScore]:
+) -> tuple[str, AIScore, _Verdict | None]:
     threshold = deps.settings.ai_score_threshold
+    max_rounds = deps.settings.max_humanize_rounds
     contractions = "formal" not in brief.tone.lower()
+    gate = _DetectorGate(deps.detector, max_rounds + 1, warnings)
     score = ai_score(text)
-    if score.score >= threshold:
+    if score.score >= threshold or deps.detector is not None:
         # Em dashes and missing contractions are habits, not wording; no model needed.
         text = _polish(text, contractions)
         score = ai_score(text)
+    # With a detector, its verdict decides; the local score is the free fallback.
+    verdict = await gate.check(text)
+
+    def gating(local: AIScore, judged: _Verdict | None) -> float:
+        return judged.score if judged else local.score
+
     rounds = 0
-    while score.score >= threshold and rounds < deps.settings.max_humanize_rounds:
+    while gating(score, verdict) >= threshold and rounds < max_rounds:
         rounds += 1
         blocks = split_blocks(text)
-        targets = _targets(text, blocks, score)
+        targets = _targets(text, blocks, score, verdict.flagged if verdict else {})
         try:
             rewrite = await deps.llm.structured(
                 tier="sonnet",
@@ -159,20 +236,39 @@ async def _humanize(
                 f"Humanizer rejected {len(rejected)} rewritten paragraph(s): "
                 + "; ".join(sorted(set(rejected)))
             )
+        if candidate == text:
+            continue  # nothing changed: no need to spend a detector call
         candidate_score = ai_score(candidate)
-        if candidate_score.score < score.score:
-            text, score = candidate, candidate_score
+        candidate_verdict = await gate.check(candidate) if verdict else None
+        if verdict and candidate_verdict is None:
+            verdict = None  # the detector dropped out: compare locally from here on
+        if gating(candidate_score, candidate_verdict) < gating(score, verdict):
+            text, score, verdict = candidate, candidate_score, candidate_verdict
 
-    if score.score >= threshold:
+    final = gating(score, verdict)
+    if final >= threshold:
+        label = f"AI detector ({verdict.provider})" if verdict else "AI-likeness"
         warnings.append(
-            f"AI-likeness score {score.score:.1f} is still above the target of {threshold:g} "
+            f"{label} score {final:.1f} is still above the target of {threshold:g} "
             f"after {rounds} rewrite round(s)"
         )
-    return text, score
+    return text, score, verdict
 
 
-def _targets(text: str, blocks: list[str], score: AIScore) -> list[FlaggedParagraph]:
+def _targets(
+    text: str, blocks: list[str], score: AIScore, detector_flags: dict[int, int]
+) -> list[FlaggedParagraph]:
     flagged = flag_paragraphs(text)
+    if detector_flags:
+        # The detector points at the exact paragraphs; add the local findings for detail.
+        by_index = {f.index: f for f in flagged}
+        for index, count in detector_flags.items():
+            target = by_index.setdefault(index, FlaggedParagraph(index=index, reasons=[]))
+            target.reasons.append(
+                f"an AI detector rates {count} of its sentences as machine-written; change their "
+                "wording and rhythm, not just a few words"
+            )
+        return sorted(by_index.values(), key=lambda f: f.index)
     if score.signals.get("uniform_rhythm", 0) > 0:
         # Even pacing is spread over the whole article, so every paragraph with more than one
         # sentence has to change its rhythm, not just the ones that stand out.

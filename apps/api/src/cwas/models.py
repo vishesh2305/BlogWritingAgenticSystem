@@ -98,6 +98,14 @@ class AIScore(BaseModel):
     signals: dict[str, float] = Field(description="Points contributed by each signal")
 
 
+class DetectorScore(BaseModel):
+    """An external AI detector's verdict on the delivered text (0-100; lower is more human)."""
+
+    provider: str
+    score: float
+    ai_fraction: float | None = None
+
+
 class FlaggedParagraph(BaseModel):
     index: int = Field(description="Position of the block in the article")
     reasons: list[str]
@@ -120,3 +128,4 @@ class Draft(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     readability: Readability | None = None
     ai_score: AIScore | None = None
+    detector_score: DetectorScore | None = None

@@ -11,9 +11,9 @@ from cwas.config import Settings
 from cwas.kb.knowledge_base import KnowledgeBase
 from cwas.kb.store import InMemoryVectorStore
 from cwas.models import Brief, ScrapedPage, SearchResult, SourceType
+from cwas.tools.detector import DetectorError, DetectorResult, SentenceScore
 from cwas.tools.embed import HashingEmbedder
 from cwas.tools.grammar import GrammarMatch
-from cwas.tools.detector import DetectorError, DetectorResult, SentenceScore
 from cwas.tools.search import SearchError
 from cwas.usage import record_usage
 

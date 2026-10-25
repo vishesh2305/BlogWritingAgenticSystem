@@ -416,11 +416,23 @@ async def test_a_round_the_detector_does_not_score_lower_is_discarded() -> None:
 
 async def test_detector_calls_are_capped_at_one_per_round_plus_one() -> None:
     detector = FakeDetector([60.0], flag="Inverters")
-    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+    rewritten = HUMAN_PARAGRAPH.replace(
+        "Inverters, it turned out.", "The inverters, it turned out."
+    )
+    llm = FakeLLM(structured={Rewrite: [rewrite(1, rewritten)]})
 
     await humanizer(state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=2))
 
     assert len(detector.texts) == 3
+
+
+async def test_a_round_that_changes_nothing_is_not_sent_to_the_detector() -> None:
+    detector = FakeDetector([60.0], flag="Inverters")
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+
+    await humanizer(state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=2))
+
+    assert len(detector.texts) == 1
 
 
 async def test_a_failing_detector_falls_back_to_the_local_score_and_is_not_retried() -> None:
@@ -434,3 +446,27 @@ async def test_a_failing_detector_falls_back_to_the_local_score_and_is_not_retri
     assert draft.detector_score is None
     assert len(detector.texts) == 1
     assert any("detector" in w.lower() for w in update["warnings"])
+
+
+class QuotaRunsOutDetector(FakeDetector):
+    """Answers the first call, then fails like an exhausted daily quota."""
+
+    async def detect(self, text: str) -> Any:
+        if self.texts:
+            self.texts.append(text)
+            raise failing_detector()._scores  # type: ignore[misc]
+        return await super().detect(text)
+
+
+async def test_a_detector_that_drops_out_mid_run_hands_over_to_the_local_score() -> None:
+    detector = QuotaRunsOutDetector([60.0], flag="Inverters")
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
+
+    update = await humanizer(
+        state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=1)
+    )
+
+    [draft] = update["drafts"]
+    assert draft.markdown == f"{HEADING}\n\n{HUMAN_PARAGRAPH}\n\n{FIXED}"  # judged locally
+    assert draft.detector_score is None
+    assert any("detector unavailable" in w for w in update["warnings"])

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     tavily_api_key: SecretStr | None = None
     voyage_api_key: SecretStr | None = None
     languagetool_url: str | None = None
+    # External AI detector for the humanizer loop; without a key the local score is used.
+    sapling_api_key: SecretStr | None = None
+    detector_timeout: float = 20.0
 
     model_opus: str = "claude-opus-5-5"
     model_sonnet: str = "claude-sonnet-5-5"
