@@ -51,6 +51,8 @@ The Humanizer (Agent 7) scores the draft from 0 to 100 for machine-typical style
 
 This score is a local stand-in that tracks what detectors look for. It is **not** GPTZero, Originality.ai or Turnitin, and those tools disagree with each other, so a low score here doesn't guarantee a low score there.
 
+**Real detector (optional):** set `SAPLING_API_KEY` and the Humanizer is judged by [Sapling's AI detector](https://sapling.ai) instead. Its score (0–100) becomes the target, and its per-sentence scores pick the paragraphs to rewrite. To keep generation fast it makes at most `MAX_HUMANIZE_ROUNDS + 1` calls per article (about 1–3 s each): one after the free local fixes, then one per round that changed the text. If Sapling times out (`DETECTOR_TIMEOUT`, default 20 s), errors or runs out of quota, the run carries on with the local score and a warning. The result is in `GET /runs/{id}` as `detector_score`. Sapling's free tier allows 50,000 characters a day, roughly 5 articles; identical text is cached for 3 days and costs nothing to recheck. Grammarly's AI checker has no public API, so check it by hand.
+
 To turn on grammar auto-correction, start LanguageTool:
 
 ```bash
@@ -76,14 +78,14 @@ curl -X POST localhost:8000/runs/<run_id>/answer -H 'content-type: application/j
 |---|---|---|
 | GET | `/health` | Liveness |
 | POST | `/runs` | Start a run → `202 {run_id}` |
-| GET | `/runs/{id}` | `status` (`running` / `waiting_for_input` / `completed` / `failed`), `question`, `brief`, `article`, `ai_score`, `usage` (LLM calls and tokens), `warnings`, `error` |
+| GET | `/runs/{id}` | `status` (`running` / `waiting_for_input` / `completed` / `failed`), `question`, `brief`, `article`, `ai_score`, `detector_score` (when a detector is configured), `usage` (LLM calls and tokens), `warnings`, `error` |
 | GET | `/runs/{id}/stream` | SSE events: `run_started`, `agent_started`, `agent_finished`, `agent_failed`, `question`, `answer_received`, `done`, `error`. A late subscriber gets every earlier event replayed. |
 | POST | `/runs/{id}/answer` | Answer the clarifying question → `202`, or `409` if the run isn't waiting |
 
 ## Develop
 
 ```bash
-uv run pytest --cov          # 291 tests, coverage gate 80%
+uv run pytest --cov          # 305 tests, coverage gate 80%
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src              # strict
 ```
@@ -96,7 +98,7 @@ Tests never touch the network. HTTP is mocked with `respx`, and the agents run a
 src/cwas/
   agents/      prompt_enhancer, researcher, kb_builder, writer, humanizer, grammar, prompts, deps
   graph/       state (RunState), builder (orchestrator), events, finalize
-  tools/       search (Tavily / DuckDuckGo), scrape (robots + SSRF guard), embed (Voyage/Gemini/hashing), grammar, ai_score, guards (rewrite safety), url_safety
+  tools/       search (Tavily / DuckDuckGo), scrape (robots + SSRF guard), embed (Voyage/Gemini/hashing), grammar, ai_score, detector (Sapling), guards (rewrite safety), url_safety
   kb/          chunker, store (vector store), knowledge_base, facts (numeric source sentences)
   api/app.py   FastAPI routes      runs.py  run lifecycle + event fan-out
   llm.py       LLM interface + Anthropic backend      ollama_llm.py  local Ollama backend

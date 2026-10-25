@@ -39,6 +39,7 @@
 | S | Contractions added without an LLM call (unless formal) | `41a53a6`: collection error | `aca49ce`: 287 passed, 98.26% |
 | T | Outline instead of the full article when most paragraphs are rewritten | `a95acb9`: 1 failed | `a71df3f`: 288 passed, 98.26% |
 | U | Gemini Flash-Lite as the first fallback before Groq | `5c52761`: 3 failed | `c1ccead`: 291 passed, 98.27% |
+| V | Sapling AI detector in the humanizer loop, with call caps and fallback | `041c235`: 10 collection errors (`cwas.tools.detector`) | `242b740`: 305 passed, 98.38% |
 
 Every RED in cycles A–C was a compile-time (import) failure caused by the missing implementation, not by broken test setup. In cycle D the wiring tests failed at runtime for the intended reason: Ollama settings and wiring didn't exist yet.
 
@@ -89,7 +90,7 @@ After cycle G: `pytest --cov` → **218 passed, total coverage 98.10%**. New mod
 
 After Phase A (cycle M): `pytest --cov` → **263 passed, total coverage 98.46%**.
 
-After cycle U: `pytest --cov` → **291 passed, total coverage 98.27%**.
+After cycle V: `pytest --cov` → **305 passed, total coverage 98.38%**. In cycle V, before GREEN, the call-cap test was changed to alter the text each round, and two tests were added (an unchanged round skips the detector; the detector dropping out mid-run hands over to the local score).
 
 ## Manual smoke test (real server, placeholder keys)
 
@@ -145,6 +146,7 @@ What the live runs confirm: the fallback chain, embedding retry, gpt-oss citatio
 
 ## Known gaps (not verified)
 
+- **The Sapling detector has not been run live.** No `SAPLING_API_KEY` was available; the client and the loop are covered by mocks built from Sapling's documented response (`score`, `ai_fraction`, `sentence_scores` with offsets).
 - **AI-likeness below 10 is not reliable on free-tier quotas.** See the table above. Options: a paid Gemini tier (no 20 requests/day cap), more rewrite rounds, or calibrating the local score against an external detector before tuning further.
 - **Free-tier quotas measured on this account:** `gemini-3.6-flash` 20 requests/day; `gemini-embedding-2` 100 texts/min; Groq `gpt-oss-120b` and `gpt-oss-20b` 8,000 tokens/min and 1,000 requests/day (Groq's Llama models return 404 for this account). A writer call (~10,000 requested tokens) can never fit Groq's per-minute limit, so Groq can only take smaller calls.
 
