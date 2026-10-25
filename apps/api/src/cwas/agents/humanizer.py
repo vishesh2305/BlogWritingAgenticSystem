@@ -212,6 +212,16 @@ async def _humanize(
     def gating(local: AIScore, judged: _Verdict | None) -> float:
         return judged.score if judged else local.score
 
+    settings = deps.settings
+    if verdict and verdict.score >= settings.detector_rewrite_ceiling:
+        # LLM rewrites don't move a detector this far off (live: 99.7 after two rounds), so
+        # report the score instead of spending rounds and detector calls on it.
+        warnings.append(
+            f"AI detector ({verdict.provider}) score {verdict.score:.1f} is out of reach for "
+            f"automatic rewriting (rewrites are tried below {settings.detector_rewrite_ceiling:g})"
+        )
+        return text, score, verdict
+
     rounds = 0
     while gating(score, verdict) >= threshold and rounds < max_rounds:
         rounds += 1
@@ -242,8 +252,11 @@ async def _humanize(
         candidate_verdict = await gate.check(candidate) if verdict else None
         if verdict and candidate_verdict is None:
             verdict = None  # the detector dropped out: compare locally from here on
-        if gating(candidate_score, candidate_verdict) < gating(score, verdict):
+        gain = gating(score, verdict) - gating(candidate_score, candidate_verdict)
+        if gain > 0:
             text, score, verdict = candidate, candidate_score, candidate_verdict
+        if candidate_verdict and gain < settings.detector_min_gain:
+            break  # judged by the detector, this round barely helped; another won't either
 
     final = gating(score, verdict)
     if final >= threshold:

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # External AI detector for the humanizer loop; without a key the local score is used.
     sapling_api_key: SecretStr | None = None
     detector_timeout: float = 20.0
+    # Rewrite rounds are only tried when the detector score is below this (0-100), and stop
+    # once a round lowers it by less than detector_min_gain points.
+    detector_rewrite_ceiling: float = 50.0
+    detector_min_gain: float = 5.0
 
     model_opus: str = "claude-opus-5-5"
     model_sonnet: str = "claude-sonnet-5-5"
