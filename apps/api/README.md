@@ -51,7 +51,7 @@ The Humanizer (Agent 7) scores the draft from 0 to 100 for machine-typical style
 
 This score is a local stand-in that tracks what detectors look for. It is **not** GPTZero, Originality.ai or Turnitin, and those tools disagree with each other, so a low score here doesn't guarantee a low score there.
 
-**Real detector (optional):** set `SAPLING_API_KEY` and the Humanizer is judged by [Sapling's AI detector](https://sapling.ai) instead. Its score (0–100) becomes the target, and its per-sentence scores pick the paragraphs to rewrite. To keep generation fast it makes at most `MAX_HUMANIZE_ROUNDS + 1` calls per article (about 1–3 s each): one after the free local fixes, then one per round that changed the text. If Sapling times out (`DETECTOR_TIMEOUT`, default 20 s), errors or runs out of quota, the run carries on with the local score and a warning. The result is in `GET /runs/{id}` as `detector_score`. Sapling's free tier allows 50,000 characters a day, roughly 5 articles; identical text is cached for 3 days and costs nothing to recheck. Grammarly's AI checker has no public API, so check it by hand.
+**Real detector (optional):** set `SAPLING_API_KEY` and the Humanizer is judged by [Sapling's AI detector](https://sapling.ai) instead. Its score (0–100) becomes the target, and its per-sentence scores pick the paragraphs to rewrite. To keep generation fast it makes at most `MAX_HUMANIZE_ROUNDS + 1` calls per article (about 1–3 s each): one after the free local fixes, then one per round that changed the text. If Sapling times out (`DETECTOR_TIMEOUT`, default 20 s), errors or runs out of quota, the run carries on with the local score and a warning. Live calibration showed LLM-written text scores 95–100 on Sapling and LLM rewrites barely move it, so the Humanizer only tries rewrite rounds when the score is below `DETECTOR_REWRITE_CEILING` (default 50) and stops once a round gains less than `DETECTOR_MIN_GAIN` points (default 5); otherwise it reports the score with a warning. The result is in `GET /runs/{id}` as `detector_score`. Sapling's free tier allows 50,000 characters a day, roughly 5 articles; identical text is cached for 3 days and costs nothing to recheck. Grammarly's AI checker has no public API, so check it by hand.
 
 To turn on grammar auto-correction, start LanguageTool:
 
@@ -85,7 +85,7 @@ curl -X POST localhost:8000/runs/<run_id>/answer -H 'content-type: application/j
 ## Develop
 
 ```bash
-uv run pytest --cov          # 305 tests, coverage gate 80%
+uv run pytest --cov          # 307 tests, coverage gate 80%
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src              # strict
 ```

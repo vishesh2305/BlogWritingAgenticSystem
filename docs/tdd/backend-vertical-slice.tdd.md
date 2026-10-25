@@ -40,6 +40,7 @@
 | T | Outline instead of the full article when most paragraphs are rewritten | `a95acb9`: 1 failed | `a71df3f`: 288 passed, 98.26% |
 | U | Gemini Flash-Lite as the first fallback before Groq | `5c52761`: 3 failed | `c1ccead`: 291 passed, 98.27% |
 | V | Sapling AI detector in the humanizer loop, with call caps and fallback | `041c235`: 10 collection errors (`cwas.tools.detector`) | `242b740`: 305 passed, 98.38% |
+| W | Report out-of-reach detector scores; early stop when a round gains < 5 points | `6b42fda`: 2 failed | `1dce00a`: 307 passed, 98.39% |
 
 Every RED in cycles A–C was a compile-time (import) failure caused by the missing implementation, not by broken test setup. In cycle D the wiring tests failed at runtime for the intended reason: Ollama settings and wiring didn't exist yet.
 
@@ -154,7 +155,7 @@ What the live runs confirm: the fallback chain, embedding retry, gpt-oss citatio
 | Live article, Gemini writer | 94.6 | 13.0 |
 | **Full run with the detector in the loop** (52 s total, humanizer 13.5 s incl. 2 rounds and 3 detector calls of 0.4-2.4 s) | **99.7** after 2 rounds | 24.0 |
 
-The integration works live (sentence flags, round gating, warning, `detector_score` in the run view). The local score does not track Sapling: it rewards surface style (contractions, rhythm, stock phrases), while Sapling measures how predictable the wording is to a language model, so LLM-written and LLM-rewritten text scores 95-100 either way.
+The integration works live (sentence flags, round gating, warning, `detector_score` in the run view). After cycle W, a live run with Sapling at 99.6 skipped the rewrite rounds: humanizer time fell from 13.5 s to 3.9 s (one detector call), whole run 66 s. The local score does not track Sapling: it rewards surface style (contractions, rhythm, stock phrases), while Sapling measures how predictable the wording is to a language model, so LLM-written and LLM-rewritten text scores 95-100 either way.
 
 ## Known gaps (not verified)
 
