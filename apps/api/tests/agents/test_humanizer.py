@@ -7,7 +7,7 @@ from cwas.agents.humanizer import add_contractions, humanizer, replace_em_dashes
 from cwas.llm import LLMError
 from cwas.models import Citation, Draft, Rewrite, RewrittenParagraph
 from cwas.tools.ai_score import ai_score
-from tests.fakes import FakeLLM, make_brief, make_deps
+from tests.fakes import FakeDetector, FakeLLM, failing_detector, make_brief, make_deps
 from tests.samples import AI_PARAGRAPH, HUMAN_PARAGRAPH, UNCONTRACTED
 
 HEADING = "# Going solar"
@@ -362,3 +362,75 @@ async def test_rewriting_most_paragraphs_sends_an_outline_not_the_article_twice(
     assert "<untrusted_article>" not in prompt
     assert "<untrusted_outline>\n# Guide\n## Costs\n## Savings\n</untrusted_outline>" in prompt
     assert prompt.count(body) == 2  # once per paragraph that contains it, not again as context
+
+
+# --- a real AI detector in the loop -------------------------------------------------------
+
+
+async def test_a_detector_score_under_target_ends_after_one_call_without_an_llm() -> None:
+    detector, llm = FakeDetector([4.0]), FakeLLM()
+
+    update = await humanizer(state(MIXED), make_deps(llm=llm, detector=detector))
+
+    [draft] = update["drafts"]
+    assert llm.calls == []
+    assert len(detector.texts) == 1
+    assert "# Going solar" not in detector.texts[0]  # prose only: headings are not sent
+    assert draft.detector_score is not None
+    assert (draft.detector_score.provider, draft.detector_score.score) == ("fake", 4.0)
+    assert update["warnings"] == []
+
+
+async def test_paragraphs_the_detector_flags_are_rewritten_then_rechecked() -> None:
+    detector = FakeDetector([60.0, 5.0], flag="Inverters")  # flags the human paragraph
+    rewritten = HUMAN_PARAGRAPH.replace(
+        "Inverters, it turned out.", "The inverters, it turned out."
+    )
+    llm = FakeLLM(structured={Rewrite: [rewrite(1, rewritten)]})
+
+    update = await humanizer(state(MIXED), make_deps(llm=llm, detector=detector))
+
+    [draft] = update["drafts"]
+    prompt = llm.calls[0]["prompt"]
+    assert '<paragraph index="1"' in prompt  # flagged by the detector, not the local score
+    assert "AI detector" in prompt
+    assert len(detector.texts) == 2
+    assert rewritten in draft.markdown
+    assert draft.detector_score.score == 5.0  # type: ignore[union-attr]
+    assert update["warnings"] == []
+
+
+async def test_a_round_the_detector_does_not_score_lower_is_discarded() -> None:
+    detector = FakeDetector([60.0, 70.0], flag="Inverters")
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
+
+    update = await humanizer(
+        state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=1)
+    )
+
+    [draft] = update["drafts"]
+    assert draft.markdown == POLISHED
+    assert draft.detector_score.score == 60.0  # type: ignore[union-attr]
+    assert any("AI detector" in w and "60" in w for w in update["warnings"])
+
+
+async def test_detector_calls_are_capped_at_one_per_round_plus_one() -> None:
+    detector = FakeDetector([60.0], flag="Inverters")
+    llm = FakeLLM(structured={Rewrite: [Rewrite(paragraphs=[])]})
+
+    await humanizer(state(MIXED), make_deps(llm=llm, detector=detector, max_humanize_rounds=2))
+
+    assert len(detector.texts) == 3
+
+
+async def test_a_failing_detector_falls_back_to_the_local_score_and_is_not_retried() -> None:
+    detector = failing_detector()
+    llm = FakeLLM(structured={Rewrite: [rewrite(2, FIXED)]})
+
+    update = await humanizer(state(MIXED), make_deps(llm=llm, detector=detector))
+
+    [draft] = update["drafts"]
+    assert draft.markdown == f"{HEADING}\n\n{HUMAN_PARAGRAPH}\n\n{FIXED}"
+    assert draft.detector_score is None
+    assert len(detector.texts) == 1
+    assert any("detector" in w.lower() for w in update["warnings"])

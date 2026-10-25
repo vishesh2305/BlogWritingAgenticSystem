@@ -13,7 +13,8 @@ from cwas.llm import LLM
 from cwas.runs import RunManager
 from cwas.throttled_llm import ThrottledLLM
 from cwas.tools.embed import GeminiEmbedder, HashingEmbedder, VoyageEmbedder
-from cwas.wiring import ConfigError, _build_embedder, _build_llm, runtime
+from cwas.tools.detector import SaplingDetector
+from cwas.wiring import ConfigError, _build_detector, _build_embedder, _build_llm, runtime
 from tests.fakes import make_settings
 
 TAGS_URL = "http://localhost:11434/api/tags"
@@ -204,3 +205,17 @@ async def test_embedder_prefers_voyage_then_gemini_then_offline_hashing(
         embedder = _build_embedder(make_settings(**keys), http)
 
     assert isinstance(embedder, expected)
+
+
+async def test_a_sapling_key_turns_the_detector_on() -> None:
+    async with httpx.AsyncClient() as http:
+        assert isinstance(
+            _build_detector(make_settings(sapling_api_key="sap-k"), http), SaplingDetector
+        )
+
+
+async def test_without_a_detector_key_there_is_no_detector(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SAPLING_API_KEY", raising=False)
+
+    async with httpx.AsyncClient() as http:
+        assert _build_detector(make_settings(), http) is None

@@ -13,6 +13,7 @@ from cwas.kb.store import InMemoryVectorStore
 from cwas.models import Brief, ScrapedPage, SearchResult, SourceType
 from cwas.tools.embed import HashingEmbedder
 from cwas.tools.grammar import GrammarMatch
+from cwas.tools.detector import DetectorError, DetectorResult, SentenceScore
 from cwas.tools.search import SearchError
 from cwas.usage import record_usage
 
@@ -126,6 +127,7 @@ def make_deps(
     search: FakeSearch | None = None,
     scraper: FakeScraper | None = None,
     grammar: FakeGrammar | None = None,
+    detector: "FakeDetector | None" = None,
     **settings: Any,
 ) -> AgentDeps:
     return AgentDeps(
@@ -134,5 +136,36 @@ def make_deps(
         scraper=scraper or FakeScraper({}),
         kb=KnowledgeBase(HashingEmbedder(dimensions=256), InMemoryVectorStore(), max_chars=400),
         grammar=grammar,
+        detector=detector,
         settings=make_settings(**settings),
     )
+
+
+class FakeDetector:
+    """Scores texts with scripted overall scores (the last one repeats). Sentences containing
+    `flag` are reported as machine-written; an Exception makes every call fail."""
+
+    name = "fake"
+
+    def __init__(self, scores: list[float] | Exception, flag: str | None = None) -> None:
+        self._scores = scores
+        self._flag = flag
+        self.texts: list[str] = []
+
+    async def detect(self, text: str) -> DetectorResult:
+        self.texts.append(text)
+        if isinstance(self._scores, Exception):
+            raise self._scores
+        score = self._scores.pop(0) if len(self._scores) > 1 else self._scores[0]
+        sentences = []
+        start = 0
+        for sentence in text.replace("\n", " ").split(". "):
+            end = start + len(sentence)
+            flagged = self._flag is not None and self._flag in sentence
+            sentences.append(SentenceScore(start=start, end=end, score=0.9 if flagged else 0.1))
+            start = end + 2
+        return DetectorResult(score=score, ai_fraction=None, sentences=sentences)
+
+
+def failing_detector() -> FakeDetector:
+    return FakeDetector(DetectorError("Sapling returned HTTP 429: quota"))
