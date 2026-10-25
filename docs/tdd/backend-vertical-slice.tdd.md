@@ -144,9 +144,21 @@ Provider checks (each API alone): Gemini text and JSON on both tiers, Groq text 
 
 What the live runs confirm: the fallback chain, embedding retry, gpt-oss citation handling, heading-preserving research (2–3 competitors per run with outlines and JSON-LD types), fact extraction (50–120 facts) and token accounting all work against the real APIs. What they don't confirm: **the AI-likeness target.** Only 1 of 7 completed hosted runs finished below 10 (7.8, and that run had lost its citations). The others ended at 13–23, mostly on `uniform_rhythm` and `no_contractions`, because the humanizer's rewrite call was starved by quotas or made by Flash-Lite, which ignores the contraction and rhythm instructions.
 
+### Cycle V live check: Sapling calibration (2026-10-25)
+
+| Text | Sapling (0-100, higher = AI) | Local AI-likeness |
+|---|---|---|
+| `HUMAN_PARAGRAPH` test sample (written by an AI to look human) | 99.1 | 0.0 |
+| `AI_PARAGRAPH` test sample | 96.9 | 80.0 |
+| Live article, Flash-Lite writer (cycle U run) | 100.0 | 17.8 |
+| Live article, Gemini writer | 94.6 | 13.0 |
+| **Full run with the detector in the loop** (52 s total, humanizer 13.5 s incl. 2 rounds and 3 detector calls of 0.4-2.4 s) | **99.7** after 2 rounds | 24.0 |
+
+The integration works live (sentence flags, round gating, warning, `detector_score` in the run view). The local score does not track Sapling: it rewards surface style (contractions, rhythm, stock phrases), while Sapling measures how predictable the wording is to a language model, so LLM-written and LLM-rewritten text scores 95-100 either way.
+
 ## Known gaps (not verified)
 
-- **The Sapling detector has not been run live.** No `SAPLING_API_KEY` was available; the client and the loop are covered by mocks built from Sapling's documented response (`score`, `ai_fraction`, `sentence_scores` with offsets).
+- **Real detectors don't agree with the local score, and LLM rewriting doesn't move them.** See the Sapling calibration above.
 - **AI-likeness below 10 is not reliable on free-tier quotas.** See the table above. Options: a paid Gemini tier (no 20 requests/day cap), more rewrite rounds, or calibrating the local score against an external detector before tuning further.
 - **Free-tier quotas measured on this account:** `gemini-3.6-flash` 20 requests/day; `gemini-embedding-2` 100 texts/min; Groq `gpt-oss-120b` and `gpt-oss-20b` 8,000 tokens/min and 1,000 requests/day (Groq's Llama models return 404 for this account). A writer call (~10,000 requested tokens) can never fit Groq's per-minute limit, so Groq can only take smaller calls.
 
